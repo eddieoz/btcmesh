@@ -70,7 +70,7 @@ btcmesh/
     The application is configured using a `.env` file in the project root.
     Copy the example file to create your own configuration:
     ```bash
-    cp .env.example .env
+    cp .env-example .env
     ```
     Then, edit the `.env` file to set your specific configurations. For example:
 
