@@ -61,6 +61,39 @@ def load_bitcoin_rpc_config():
         raise ValueError(
             f"Missing required Bitcoin RPC config fields: {', '.join(missing)}"
         )
+##################
+    def load_bitcoin_rpc_config():
+    """
+    Loads Bitcoin RPC config from environment variables (.env)
+    Returns a dict with host, port, user, password, cookie.
+    Raises ValueError if any required field is missing.
+    Story 4.1.
+    """
+    config = {
+        "host": os.getenv("BITCOIN_RPC_HOST", "127.0.0.1"),
+        "port": int(os.getenv("BITCOIN_RPC_PORT", 8332)),
+        "user": os.environ.get("BITCOIN_RPC_USER"),
+        "password": os.environ.get("BITCOIN_RPC_PASSWORD"),
+    }
+    cookie_path = os.getenv("BITCOIN_RPC_COOKIE")
+    if cookie_path:
+        if not os.path.isfile(cookie_path):
+            raise ValueError(f"Ficheiro .cookie n  o encontrado: {cookie_path}")
+        try:
+            with open(cookie_path, "r") as f:
+                cookie = f.read().strip()
+                config["user"], config["password"] = cookie.split(":", 1)
+        except Exception as e:
+            raise ValueError(f"Erro ao ler o ficheiro .cookie: {e}")
+    else:
+        config["user"] = os.getenv("BITCOIN_RPC_USER")
+        config["password"] = os.getenv("BITCOIN_RPC_PASSWORD")
+        if not config["user"] or not config["password"]:
+            raise ValueError(
+                "Credenciais n  o definidas corretamente. "
+                "Define BITCOIN_RPC_COOKIE ou BITCOIN_RPC_USER e BITCOIN_RPC_PASSWORD."
+            )
+    return config
 
     # Extract the numerical part of the port string
     port_val = port_str.split("#")[0].strip()
