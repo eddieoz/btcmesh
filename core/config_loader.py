@@ -46,24 +46,6 @@ def get_meshtastic_serial_port() -> Optional[str]:
 
 def load_bitcoin_rpc_config():
     """
-    Loads Bitcoin RPC config from environment variables (.env).
-    Returns a dict with host, port, user, password.
-    Raises ValueError if any required field is missing.
-    Story 4.1.
-    """
-    host = os.environ.get("BITCOIN_RPC_HOST")
-    port_str = os.environ.get("BITCOIN_RPC_PORT")
-    user = os.environ.get("BITCOIN_RPC_USER")
-    password = os.environ.get("BITCOIN_RPC_PASSWORD")
-    missing_keys = {"host": host, "port": port_str, "user": user, "password": password}
-    missing = [k for k, v in missing_keys.items() if not v]
-    if missing:
-        raise ValueError(
-            f"Missing required Bitcoin RPC config fields: {', '.join(missing)}"
-        )
-##################
-    def load_bitcoin_rpc_config():
-    """
     Loads Bitcoin RPC config from environment variables (.env)
     Returns a dict with host, port, user, password, cookie.
     Raises ValueError if any required field is missing.
