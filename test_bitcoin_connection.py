@@ -137,9 +137,8 @@ def main():
         try:
             # The sendrawtransaction method in our rpc object
             # (AuthServiceProxy or RequestsBitcoinRPC) from core.rpc_client
-            # was updated to accept max_fee_rate as the second argument.
-            # We pass 0.0 for no feerate limit.
-            txid = rpc.sendrawtransaction(EXAMPLE_RAW_TX, 0.0)
+            # uses default Bitcoin Core behavior for fee rate validation.
+            txid = rpc.sendrawtransaction(EXAMPLE_RAW_TX)
             print(f"Successfully broadcast example transaction. TXID: {txid}")
             print("\nRaw transaction broadcast test successful!")
         except Exception as e:
