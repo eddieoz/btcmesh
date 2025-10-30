@@ -27,7 +27,7 @@ from core.reassembler import (
     CHUNK_PREFIX,
     CHUNK_PARTS_DELIMITER,
 )
-from core.rpc_client import connect_bitcoin_rpc, broadcast_transaction_via_rpc
+from core.rpc_client import BitcoinRPCClient
 
 if TYPE_CHECKING:
     import meshtastic.serial_interface
@@ -363,6 +363,16 @@ def on_receive_text_message(
                     reassembled_hex = transaction_reassembler.add_chunk(
                         sender_raw_key_for_reassembler, message_text
                     )
+
+                    # ACK valid chunk and request next
+                    if chunk_number < total_chunks:
+                        ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|REQUEST_CHUNK|{chunk_number+1}"
+                    elif chunk_number == total_chunks:
+                        ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|ALL_CHUNKS_RECEIVED"
+                    send_reply_func(
+                        iface, sender_node_id_for_reply, ack_msg, session_id
+                    )
+
                     if reassembled_hex:
                         logger.info(
                             f"[Sender: {sender_node_id_for_reply}] Successfully reassembled transaction: "
@@ -374,8 +384,8 @@ def on_receive_text_message(
                             f"[Sender: {sender_node_id_for_reply}, Session: {session_id}] Attempting to broadcast raw TX: {reassembled_hex}"
                         )
 
-                        txid, error = broadcast_transaction_via_rpc(
-                            bitcoin_rpc, reassembled_hex
+                        txid, error = bitcoin_rpc.broadcast_transaction_via_rpc(
+                                reassembled_hex
                         )
                         if txid:
                             ack_msg = f"BTC_ACK|{session_id}|SUCCESS|TXID:{txid}"
@@ -430,15 +440,6 @@ def on_receive_text_message(
                             logger.error(
                                 f"[Sender: {sender_node_id_for_reply}, Session: {session_id}] Broadcast failed: {error}. Sending NACK."
                             )
-                    else:
-                        # ACK valid chunk and request next
-                        if chunk_number < total_chunks:
-                            ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|REQUEST_CHUNK|{chunk_number+1}"
-                        else:
-                            ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|ALL_CHUNKS_RECEIVED"
-                        send_reply_func(
-                            iface, sender_node_id_for_reply, ack_msg, session_id
-                        )
                 except (InvalidChunkFormatError, MismatchedTotalChunksError) as e:
                     tx_session_id_for_nack = (
                         session_id
@@ -705,6 +706,7 @@ def main() -> None:
         try:
             rpc_config = load_bitcoin_rpc_config()
             global bitcoin_rpc
+
             # Tor integration: if host is .onion, start Tor and set proxy
             rpc_host = rpc_config.get("host", "")
             if is_onion_address(rpc_host):
@@ -717,8 +719,10 @@ def main() -> None:
                 server_logger.info(
                     f"Tor started. Using SOCKS proxy at {proxy_url} for Bitcoin RPC."
                 )
-            bitcoin_rpc = connect_bitcoin_rpc(rpc_config)
+            # connect rpc    
+            bitcoin_rpc = BitcoinRPCClient(rpc_config)
             server_logger.info("Connected to Bitcoin Core RPC node successfully.")
+            server_logger.info(f"rpc: {bitcoin_rpc}.")
         except Exception as e:
             bitcoin_rpc = None
             server_logger.error(

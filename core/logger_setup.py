@@ -9,12 +9,13 @@ LOG_DIR = os.path.join(
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
-LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-LOG_LEVEL = logging.INFO
+# Log formats for INFO and DEBUG levels
+LOG_FORMAT_INFO = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_FORMAT_DEBUG = "%(asctime)s - %(name)s - %(levelname)s - Line: %(lineno)d - %(message)s"
+LOG_LEVEL = logging.DEBUG
 
 # Server log file
 SERVER_LOG_FILE = os.path.join(LOG_DIR, "btcmesh_server.log")
-
 
 def setup_logger(
     logger_name: str, log_file: str, level: int = LOG_LEVEL
@@ -32,39 +33,41 @@ def setup_logger(
     """
     logger = logging.getLogger(logger_name)
     logger.setLevel(level)
-    logger.propagate = (
-        False  # Prevents log duplication if root logger is also configured
-    )
+    logger.propagate = False  # Prevents log duplication
 
-    # Avoid adding handlers if they already exist (e.g., in tests or multiple calls)
     if not logger.handlers:
         # Console Handler
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        formatter = logging.Formatter(LOG_FORMAT_DEBUG if level == logging.DEBUG else LOG_FORMAT_INFO)
+        console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
-        # File Handler (Rotating)
+        # Rotating File Handler
         file_handler = RotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5
-        )  # 10MB per file, 5 backups
-        file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+            log_file, maxBytes=10 * 1024 * 1024, backupCount=5  # 10MB per file, 5 backups
+        )
+        file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
     return logger
-
 
 # Pre-configured server logger instance
 server_logger = setup_logger("btcmesh_server", SERVER_LOG_FILE)
 
 if __name__ == "__main__":
-    # Example usage:
-    test_logger = setup_logger(
-        "test_logger", os.path.join(LOG_DIR, "test.log"), logging.DEBUG
+    # Example usage
+    test_logger_info = setup_logger(
+        "test_logger_info", os.path.join(LOG_DIR, "test_info.log"), logging.INFO
     )
-    test_logger.debug("This is a debug message.")
-    test_logger.info("This is an info message.")
-    test_logger.warning("This is a warning message.")
-    test_logger.error("This is an error message.")
-    test_logger.critical("This is a critical message.")
+    
+    test_logger_debug = setup_logger(
+        "test_logger_debug", os.path.join(LOG_DIR, "test_debug.log"), logging.DEBUG
+    )
+    
+    # Logging various messages
+    test_logger_info.info("This is an info message.")
+    test_logger_info.warning("This is a warning message.")
 
-    server_logger.info("Server logger test message from logger_setup.py")
+    test_logger_debug.debug("This is a debug message with line number.")
+    test_logger_debug.info("This is an info message from debug logger.")
+    test_logger_debug.warning("This is a warning message from debug logger.")
