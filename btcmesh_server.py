@@ -2,11 +2,6 @@ from __future__ import annotations
 
 import time
 from typing import Optional, Any, Dict, TYPE_CHECKING
-import subprocess
-import tempfile
-import shutil
-import socket
-import os
 
 # No direct 'import meshtastic' or its components here at the module level.
 # These will be imported inside functions that need them to allow the module
@@ -54,51 +49,8 @@ TRX_CHUNK_BUFFER: Dict[str, Any] = {}  # This will be replaced by reassembler lo
 # Ensure .env is loaded at application startup
 load_app_config()
 
-# Tor integration settings
-TOR_BINARY_PATH = os.path.join(os.path.dirname(__file__), "tor", "tor")
-TOR_SOCKS_PORT = 19050  # You can randomize or make configurable
-TOR_CONTROL_PORT = 9051  # Not strictly needed unless you want to control Tor
-
 # --- Reliable Chunked Protocol: Deduplication state ---
 PROCESSED_CHUNKS = set()  # Set of (session_id, chunk_number) tuples
-
-
-def is_onion_address(host):
-    return host.endswith(".onion")
-
-
-def start_tor(socks_port=TOR_SOCKS_PORT):
-    data_dir = tempfile.mkdtemp()
-    tor_cmd = [
-        TOR_BINARY_PATH,
-        "--SocksPort",
-        str(socks_port),
-        "--DataDirectory",
-        data_dir,
-    ]
-    tor_process = subprocess.Popen(
-        tor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    # Wait for Tor to be ready
-    for _ in range(30):
-        try:
-            s = socket.create_connection(("localhost", socks_port), timeout=2)
-            s.close()
-            return tor_process, data_dir
-        except Exception:
-            time.sleep(1)
-    tor_process.terminate()
-    shutil.rmtree(data_dir)
-    raise RuntimeError("Tor did not start in time")
-
-
-def stop_tor(tor_process, data_dir):
-    if tor_process:
-        tor_process.terminate()
-        tor_process.wait()
-    if data_dir and os.path.exists(data_dir):
-        shutil.rmtree(data_dir)
-
 
 def _format_node_id(node_id_val: Any) -> Optional[str]:
     """Helper to consistently format node IDs to !<hex_string> or return None."""
@@ -707,19 +659,6 @@ def main() -> None:
             rpc_config = load_bitcoin_rpc_config()
             global bitcoin_rpc
 
-            # Tor integration: if host is .onion, start Tor and set proxy
-            rpc_host = rpc_config.get("host", "")
-            if is_onion_address(rpc_host):
-                server_logger.info(
-                    f"Bitcoin RPC host {rpc_host} is a .onion address. Starting Tor..."
-                )
-                tor_process, tor_data_dir = start_tor()
-                proxy_url = f"socks5h://localhost:{TOR_SOCKS_PORT}"
-                rpc_config["proxy"] = proxy_url
-                server_logger.info(
-                    f"Tor started. Using SOCKS proxy at {proxy_url} for Bitcoin RPC."
-                )
-            # connect rpc    
             bitcoin_rpc = BitcoinRPCClient(rpc_config)
             server_logger.info("Connected to Bitcoin Core RPC node successfully.")
             server_logger.info(f"rpc: {bitcoin_rpc}.")
@@ -816,10 +755,6 @@ def main() -> None:
             if meshtastic_iface and hasattr(meshtastic_iface, "close"):
                 server_logger.info("Closing Meshtastic interface...")
                 meshtastic_iface.close()
-            if tor_process:
-                server_logger.info("Stopping Tor process...")
-                stop_tor(tor_process, tor_data_dir)
-            server_logger.info("BTC Mesh Relay Server stopped.")
 
     except Exception as e:
         server_logger.error(f"Unhandled exception in main function: {e}", exc_info=True)
