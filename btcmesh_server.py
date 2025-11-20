@@ -336,7 +336,7 @@ def on_receive_text_message(
                             f"[Sender: {sender_node_id_for_reply}, Session: {session_id}] Attempting to broadcast raw TX: {reassembled_hex}"
                         )
 
-                        txid, error = bitcoin_rpc.broadcast_transaction_via_rpc(
+                        txid, error = bitcoin_rpc.broadcast_transaction(
                                 reassembled_hex
                         )
                         if txid:
