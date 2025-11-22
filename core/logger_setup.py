@@ -12,7 +12,7 @@ if not os.path.exists(LOG_DIR):
 # Log formats for INFO and DEBUG levels
 LOG_FORMAT_INFO = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 LOG_FORMAT_DEBUG = "%(asctime)s - %(name)s - %(levelname)s - Line: %(lineno)d - %(message)s"
-LOG_LEVEL = logging.DEBUG
+LOG_LEVEL = logging.INFO
 
 # Server log file
 SERVER_LOG_FILE = os.path.join(LOG_DIR, "btcmesh_server.log")

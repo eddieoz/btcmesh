@@ -2,6 +2,7 @@ import requests
 import json
 import time
 
+from core.logger_setup import server_logger  # Assuming a logger is available
 class BitcoinRPCClient:
     class BitcoinRPCException(Exception):
         def __init__(self, error_info):
@@ -26,16 +27,16 @@ class BitcoinRPCClient:
 
     def connect(self):
         """Connects to Bitcoin Core RPC using the provided config dictionary."""
-        print("Connecting to Bitcoin RPC...")
+        server_logger.debug("Connecting to Bitcoin RPC...")
         
         # Test connection
         try:
             info = self.getblockchaininfo()
-            print(f"Connected to Bitcoin Core chain: {info['chain']}")
+            server_logger.debug(f"Connected to Bitcoin Core chain: {info['chain']}")
             if info.get("error"):
                 raise self.BitcoinRPCException(info["error"])
         except Exception as e:
-                print(f"Error connecting to Bitcoin Core RPC: {e}")
+                server_logger.debug(f"Error connecting to Bitcoin Core RPC: {e}")
 
     def rpc_request(self, method, params=None, retries: int = 3, delay: int = 5):
         """Performs a JSON-RPC requests with automatic connection retry logic."""
@@ -60,7 +61,7 @@ class BitcoinRPCClient:
 
         for i in range(retries):
             try:
-                print(f"Executing RPC method: {method} (Attempt {i + 1}/{retries})")
+                server_logger.debug(f"Executing RPC method: {method} (Attempt {i + 1}/{retries})")
                 response = requests.post(self.uri, data=json.dumps(payload), headers=headers, proxies=proxies, timeout=30)
                 # response.raise_for_status()  # Raise an HTTPError for bad responses
                 result = response.json()
@@ -68,20 +69,13 @@ class BitcoinRPCClient:
                     raise self.BitcoinRPCException(result["error"])
                 return result["result"]
             except (BrokenPipeError, ConnectionError, IOError) as e:
-                print(f"Connection error detected: {e}")
+                server_logger.debug(f"Connection error detected: {e}")
                 if i < retries - 1:
-                    print(f"Retrying connection in {delay} seconds...")
+                    server_logger.debug(f"Retrying connection in {delay} seconds...")
                     time.sleep(delay)
                 else:
-                    print("Max retries reached. Failing...")
-                    raise  # Re-raise the exception after exhausting retries
-            # except Exception as e:
-            #     if e['message']:
-            #         print(f"Bitcoind RPC error: {e['message']}")
-            #     else:
-            #         print(f"Bitcoind RPC error:: {e}")
-            #     raise  # Do not retry on RPC logic errors
-                
+                    server_logger.debug("Max retries reached. Failing...")
+                    raise  # Re-raise the exception after exhausting retries        
 
     def getblockchaininfo(self):
         return self.rpc_request("getblockchaininfo")
@@ -96,19 +90,19 @@ class BitcoinRPCClient:
         Broadcasts a raw transaction hex via Bitcoin Core RPC sendrawtransaction.
         Returns (txid, None) on success or (None, error_message) on failure.
         """
-        print(f"Calling broadcast_transaction_via_rpc: raw_tx_hex: {raw_tx_hex}")
+        server_logger.debug(f"Calling broadcast_transaction_via_rpc: raw_tx_hex: {raw_tx_hex}")
         
         try:
             txid = self.sendrawtransaction(raw_tx_hex, 0.0)  # Pass 0.0 for no fee rate limit
-            print(f"Transaction ID received: {txid}")
+            server_logger.debug(f"Transaction ID received: {txid}")
             return txid, None
         except self.BitcoinRPCException as e:
             message = e.message
-            print(f"Caught an RPC error with code {e.code}: {e.message}")
+            server_logger.debug(f"Caught an RPC error with code {e.code}: {e.message}")
             return None, message
         except requests.exceptions.RequestException as e:
-            print(f"RequestException: {str(e)}")
+            server_logger.debug(f"RequestException: {str(e)}")
             return None, str(e)
         except Exception as e:
-            print(f"General Exception: {str(e)}")
+            server_logger.debug(f"General Exception: {str(e)}")
             return None, str(e)
