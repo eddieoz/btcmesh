@@ -1428,8 +1428,8 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
 
     def test_valid_config_node_reachable(self):
         """Given valid config and node reachable, When connecting, Then connection is established."""
-        from core.rpc_client import BitcoinRPCClient
         with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
 
             # Configure the mock to return a successful response
             mock_response = MagicMock()
@@ -1448,6 +1448,7 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
                 proxies={},
                 timeout=30
             )
+            
 
     def test_non_int_port_invalid_config_raises(self):
         """Given invalid config, When connecting, Then error is raised."""
@@ -1509,15 +1510,59 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
             # Call the method
             BitcoinRPCClient(bad_config)
 
-    def test_node_unreachable_raises(self):
-        """Given valid config but node unreachable, When connecting, Then error is raised."""
-        with unittest.mock.patch(
-            "core.rpc_client.AuthServiceProxy", side_effect=ConnectionRefusedError
-        ):
-            from core.rpc_client import connect_bitcoin_rpc
+    def test_rpc_request_retries_on_connection_error_three_times_last_success(self):
+        """Given valid config but node unreachable, When connecting, retries twice, succeeds on third try."""
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
 
-            with self.assertRaises(ConnectionRefusedError):
-                connect_bitcoin_rpc(self.valid_config)
+            # Mock the response to raise ConnectionError for the first two calls and success on last
+            mock_post.side_effect = [
+                ConnectionError("Connection error"), 
+                ConnectionError("Connection error"),
+                MagicMock(json=MagicMock(return_value={"result": {"chain": "main"}, "error": None}))
+            ]
+
+            # Call the method
+            rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
+            self.assertIsNotNone(rpc)
+            self.assertEqual(mock_post.call_count, 3)  # Ensure post was called three times
+
+    def test_rpc_request_retries_on_connection_error_second_success(self):
+        """Given valid config but node unreachable on first try, retries and suceeds on second try."""
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
+
+            # Mock the response to raise ConnectionError for the first call and success on the second
+            mock_post.side_effect = [
+                ConnectionError("Connection error"), 
+                MagicMock(json=MagicMock(return_value={"result": {"chain": "main"}, "error": None}))
+            ]
+
+            # Call the method
+            rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
+            self.assertIsNotNone(rpc)
+            self.assertEqual(mock_post.call_count, 2)  # Ensure post was called two times
+
+    def test_rpc_request_retries_on_connection_error_three_times_failure(self):
+        """Given valid config but node unreachable, When connecting, retries 3 times, fails."""
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
+
+            # Mock the response to raise ConnectionError
+            mock_post.side_effect = ConnectionError("Connection error")
+
+            # Assert that the ConnectionError is raised after 3 attempts
+            with self.assertRaises(ConnectionError) as context:
+                # Call the method
+                rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
+            self.assertTrue("Connection error" in str(context.exception))
+            self.assertEqual(mock_post.call_count, 3)  # Ensure post was called three times
 
 
 class TestBitcoinRpcBroadcastStory43(unittest.TestCase):
