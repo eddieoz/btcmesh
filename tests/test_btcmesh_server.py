@@ -1428,23 +1428,86 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
 
     def test_valid_config_node_reachable(self):
         """Given valid config and node reachable, When connecting, Then connection is established."""
-        with unittest.mock.patch("core.rpc_client.AuthServiceProxy") as mock_proxy:
-            from core.rpc_client import connect_bitcoin_rpc
+        from core.rpc_client import BitcoinRPCClient
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
 
-            mock_proxy.return_value.getblockchaininfo.return_value = {"blocks": 100}
-            rpc = connect_bitcoin_rpc(self.valid_config)
+            # Configure the mock to return a successful response
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"result": {"chain": "main"}, "error": None}
+            mock_post.return_value = mock_response
+
+            # Call the method
+            rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
             self.assertIsNotNone(rpc)
-            mock_proxy.assert_called_once()
-            self.assertTrue(hasattr(rpc, "getblockchaininfo"))
+            mock_post.assert_called_once_with(
+                rpc.uri,
+                data='{"jsonrpc": "1.0", "id": "btcmesh", "method": "getblockchaininfo", "params": []}',
+                headers={'Content-Type': 'application/json'},
+                proxies={},
+                timeout=30
+            )
 
-    def test_invalid_config_raises(self):
+    def test_non_int_port_invalid_config_raises(self):
         """Given invalid config, When connecting, Then error is raised."""
-        from core.rpc_client import connect_bitcoin_rpc
+        from core.rpc_client import BitcoinRPCClient
 
         bad_config = self.valid_config.copy()
         bad_config["port"] = "notanint"
+
+        # Assertions
         with self.assertRaises(Exception):
-            connect_bitcoin_rpc(bad_config)
+            # Call the method
+            BitcoinRPCClient(bad_config)
+
+    def test_no_port_invalid_config_raises(self):
+        """Given invalid config, When connecting, Then error is raised."""
+        from core.rpc_client import BitcoinRPCClient
+
+        bad_config = self.valid_config.copy()
+        bad_config["port"] = None
+
+        # Assertions
+        with self.assertRaises(Exception):
+            # Call the method
+            BitcoinRPCClient(bad_config)
+
+    def test_no_host_invalid_config_raises(self):
+        """Given invalid config, When connecting, Then error is raised."""
+        from core.rpc_client import BitcoinRPCClient
+
+        bad_config = self.valid_config.copy()
+        bad_config["host"] = None
+
+        # Assertions
+        with self.assertRaises(Exception):
+            # Call the method
+            BitcoinRPCClient(bad_config)
+
+    def test_no_user_invalid_config_raises(self):
+        """Given invalid config, When connecting, Then error is raised."""
+        from core.rpc_client import BitcoinRPCClient
+
+        bad_config = self.valid_config.copy()
+        bad_config["user"] = None
+
+        # Assertions
+        with self.assertRaises(Exception):
+            # Call the method
+            BitcoinRPCClient(bad_config)
+
+    def test_no_password_invalid_config_raises(self):
+        """Given invalid config, When connecting, Then error is raised."""
+        from core.rpc_client import BitcoinRPCClient
+
+        bad_config = self.valid_config.copy()
+        bad_config["password"] = None
+
+        # Assertions
+        with self.assertRaises(Exception):
+            # Call the method
+            BitcoinRPCClient(bad_config)
 
     def test_node_unreachable_raises(self):
         """Given valid config but node unreachable, When connecting, Then error is raised."""
