@@ -42,13 +42,9 @@ class BitcoinRPCClient:
         server_logger.debug("Connecting to Bitcoin RPC...")
         
         # Test connection
-        try:
-            info = self.getblockchaininfo()
-            server_logger.debug(f"Connected to Bitcoin Core chain: {info['chain']}")
-            if info.get("error"):
-                raise self.BitcoinRPCException(info["error"])
-        except Exception as e:
-                server_logger.debug(f"Error connecting to Bitcoin Core RPC: {e}")
+
+        info = self.getblockchaininfo()
+        server_logger.debug(f"Connected to Bitcoin Core chain: {info['chain']}")
 
     def rpc_request(self, method, params=None, retries: int = 3, delay: int = 5):
         """Performs a JSON-RPC requests with automatic connection retry logic."""
@@ -80,14 +76,18 @@ class BitcoinRPCClient:
                 if result.get("error"):
                     raise self.BitcoinRPCException(result["error"])
                 return result["result"]
-            except (BrokenPipeError, ConnectionError, IOError) as e:
+            except (ConnectionError, TimeoutError) as e:
                 server_logger.debug(f"Connection error detected: {e}")
                 if i < retries - 1:
                     server_logger.debug(f"Retrying connection in {delay} seconds...")
                     time.sleep(delay)
                 else:
                     server_logger.debug("Max retries reached. Failing...")
-                    raise  # Re-raise the exception after exhausting retries        
+                    raise  # Re-raise the exception after exhausting retries
+            except Exception as e:
+                # Log any other exceptions and re-raise
+                server_logger.debug(f"Other error detected: {e}")
+                raise  # Re-raise any unexpected exception        
 
     def getblockchaininfo(self):
         return self.rpc_request("getblockchaininfo")
