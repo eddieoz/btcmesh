@@ -1558,7 +1558,7 @@ class TestBitcoinRpcBroadcastStory43(unittest.TestCase):
 
         # Mock connect to prevent actual connection, and requests.post for the broadcast call
         with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
-             unittest.mock.patch('requests.post') as mock_post:
+            unittest.mock.patch('requests.post') as mock_post:
             # Create client (connect is mocked so no actual connection)
             client = BitcoinRPCClient(self.config)
 
@@ -1580,7 +1580,7 @@ class TestBitcoinRpcBroadcastStory43(unittest.TestCase):
         from core.rpc_client import BitcoinRPCClient
 
         with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
-             unittest.mock.patch('requests.post') as mock_post:
+            unittest.mock.patch('requests.post') as mock_post:
             client = BitcoinRPCClient(self.config)
 
             # Simulate an error response from the RPC server
@@ -1602,7 +1602,7 @@ class TestBitcoinRpcBroadcastStory43(unittest.TestCase):
         import requests
 
         with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
-             unittest.mock.patch('requests.post') as mock_post:
+            unittest.mock.patch('requests.post') as mock_post:
             client = BitcoinRPCClient(self.config)
 
             # Simulate connection failure when trying to broadcast
