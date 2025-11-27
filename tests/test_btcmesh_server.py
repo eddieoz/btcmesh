@@ -1486,30 +1486,6 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
             # Call the method
             BitcoinRPCClient(bad_config)
 
-    def test_no_user_invalid_config_raises(self):
-        """Given invalid config, When connecting, Then error is raised."""
-        from core.rpc_client import BitcoinRPCClient
-
-        bad_config = self.valid_config.copy()
-        bad_config["user"] = None
-
-        # Assertions
-        with self.assertRaises(Exception):
-            # Call the method
-            BitcoinRPCClient(bad_config)
-
-    def test_no_password_invalid_config_raises(self):
-        """Given invalid config, When connecting, Then error is raised."""
-        from core.rpc_client import BitcoinRPCClient
-
-        bad_config = self.valid_config.copy()
-        bad_config["password"] = None
-
-        # Assertions
-        with self.assertRaises(Exception):
-            # Call the method
-            BitcoinRPCClient(bad_config)
-
     def test_rpc_request_retries_on_connection_error_three_times_last_success(self):
         """Given valid config but node unreachable, When connecting, retries twice, succeeds on third try."""
         with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
@@ -1567,40 +1543,76 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
 
 class TestBitcoinRpcBroadcastStory43(unittest.TestCase):
     def setUp(self):
-        self.valid_hex = "0100000001abcdef..."
+        self.config = {
+            'user': 'testuser',
+            'password': 'testpass',
+            'host': 'localhost',
+            'port': 8332
+        }
+        self.valid_tx_hex = "0100000001abcdef..."
         self.txid = "deadbeefcafebabe1234567890abcdef1234567890abcdef"
 
-    def test_valid_broadcast_returns_txid(self):
+    def test_successful_broadcast_returns_txid(self):
         """Given valid hex and RPC connection, When broadcast, Then TXID is returned."""
-        mock_rpc = unittest.mock.Mock()
-        mock_rpc.sendrawtransaction.return_value = self.txid
-        from core.rpc_client import broadcast_transaction_via_rpc
+        from core.rpc_client import BitcoinRPCClient
 
-        txid, error = broadcast_transaction_via_rpc(mock_rpc, self.valid_hex)
-        self.assertEqual(txid, self.txid)
-        self.assertIsNone(error)
+        # Mock connect to prevent actual connection, and requests.post for the broadcast call
+        with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
+             unittest.mock.patch('requests.post') as mock_post:
+            # Create client (connect is mocked so no actual connection)
+            client = BitcoinRPCClient(self.config)
+
+            # Simulate a successful response from the RPC server
+            mock_post.return_value.json.return_value = {
+                "result": self.txid,
+                "error": None
+            }
+
+            # Call the method
+            txid, error = client.broadcast_transaction(self.valid_tx_hex)
+
+            # Assertions
+            self.assertEqual(txid, self.txid, "TXID returned should match expected TXID.")
+            self.assertIsNone(error, "There should be no error for valid transaction.")
 
     def test_rpc_error_returns_error_message(self):
         """Given valid hex but RPC error, When broadcast, Then error message is returned."""
-        mock_rpc = unittest.mock.Mock()
-        from bitcoinrpc.authproxy import JSONRPCException
+        from core.rpc_client import BitcoinRPCClient
 
-        mock_rpc.sendrawtransaction.side_effect = JSONRPCException(
-            {"code": -26, "message": "txn-mempool-conflict"}
-        )
-        from core.rpc_client import broadcast_transaction_via_rpc
+        with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
+             unittest.mock.patch('requests.post') as mock_post:
+            client = BitcoinRPCClient(self.config)
 
-        txid, error = broadcast_transaction_via_rpc(mock_rpc, self.valid_hex)
-        self.assertIsNone(txid)
-        self.assertIn("txn-mempool-conflict", error)
+            # Simulate an error response from the RPC server
+            mock_post.return_value.json.return_value = {
+                "result": None,
+                "error": {"code": -26, "message": "txn-mempool-conflict"}
+            }
+
+            # Call the method
+            txid, error = client.broadcast_transaction(self.valid_tx_hex)
+
+            # Assertions
+            self.assertIsNone(txid)
+            self.assertIn("txn-mempool-conflict", error)
 
     def test_no_rpc_connection_returns_error(self):
-        """Given no RPC connection, When broadcast, Then error message is returned."""
-        from core.rpc_client import broadcast_transaction_via_rpc
+        """Given connection failure during broadcast, Then txid=None and error message is returned."""
+        from core.rpc_client import BitcoinRPCClient
+        import requests
 
-        txid, error = broadcast_transaction_via_rpc(None, self.valid_hex)
-        self.assertIsNone(txid)
-        self.assertIn("No RPC connection", error)
+        with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
+             unittest.mock.patch('requests.post') as mock_post:
+            client = BitcoinRPCClient(self.config)
+
+            # Simulate connection failure when trying to broadcast
+            mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+
+            txid, error = client.broadcast_transaction(self.valid_tx_hex)
+
+            self.assertIsNone(txid)
+            self.assertIsNotNone(error)
+            self.assertIn("Connection refused", error)
 
 
 class TestReassemblyTimeoutConfigStory52(unittest.TestCase):

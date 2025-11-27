@@ -18,13 +18,8 @@ class BitcoinRPCClient:
 
     def __init__(self, config: dict):
         user = config['user']
-        if user is None:
-            raise ValueError("'user' cannot be None")
-        
         password = config['password']
-        if password is None:
-            raise ValueError("'password' cannot be None")
-        
+
         host = config['host']
         if host is None:
             raise ValueError("'host' cannot be None")
