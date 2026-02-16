@@ -1007,25 +1007,27 @@ lora/
 
 ### 20. Core Protocol Extraction
 
-- [ ] **Story 20.1: Create core/protocol.py**
-- [ ] *   **As a** developer,
-- [ ] *   **I want** protocol logic in a pure Python module,
-- [ ] *   **So that** it can be easily tested and referenced by Swift implementation.
-    - [ ] *   **Scenario:** Chunking logic extracted
-        - [ ] *   **Given** a raw transaction hex string.
-        - [ ] *   **When** `create_session(tx_hex)` is called.
-        - [ ] *   **Then** a `TransactionSession` dataclass is returned with session_id and chunks.
-    - [ ] *   **Scenario:** Message formatting extracted
-        - [ ] *   **Given** a session and chunk index.
-        - [ ] *   **When** `get_chunk_message(session, index)` is called.
-        - [ ] *   **Then** a formatted `BTC_TX|...` string is returned.
-    - [ ] *   **Scenario:** ACK parsing extracted
-        - [ ] *   **Given** a raw ACK message string.
-        - [ ] *   **When** `parse_ack(message)` is called.
-        - [ ] *   **Then** an `AckMessage` dataclass is returned.
-    - [ ] *   **Scenario:** No I/O in core
-        - [ ] *   **Given** any function in `core/protocol.py`.
-        - [ ] *   **Then** it has no print statements, no logging, no network calls.
+- [x] **Story 20.1: Create core/protocol.py**
+- [x] *   **As a** developer,
+- [x] *   **I want** protocol logic in a pure Python module,
+- [x] *   **So that** it can be easily tested and referenced by Swift implementation.
+    - [x] *   **Scenario:** Chunking logic extracted
+        - [x] *   **Given** a raw transaction hex string.
+        - [x] *   **When** `create_session(tx_hex)` is called.
+        - [x] *   **Then** a `TransactionSession` dataclass is returned with session_id and chunks.
+    - [x] *   **Scenario:** Message formatting extracted
+        - [x] *   **Given** a session and chunk index.
+        - [x] *   **When** `get_chunk_message(session, index)` is called.
+        - [x] *   **Then** a formatted `BTC_TX|...` string is returned.
+    - [x] *   **Scenario:** ACK parsing extracted
+        - [x] *   **Given** a raw ACK message string.
+        - [x] *   **When** `parse_ack(message)` is called.
+        - [x] *   **Then** an `AckMessage` dataclass is returned.
+    - [x] *   **Scenario:** No I/O in core
+        - [x] *   **Given** any function in `core/protocol.py`.
+        - [x] *   **Then** it has no print statements, no logging, no network calls.
+    *   _Note: Removed Dead protocol code (BTC_SESSION_START, BTC_SESSION_ABORT, BTC_CHUNK handlers) removed from server, CLI, and tests. Protocol documented in `project/protocol_spec.md`._
+
 
 - [x] **Story 20.2: Create core/message_types.py**
 - [x] *   **As a** developer,
