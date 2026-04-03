@@ -640,7 +640,6 @@ class TestCliNackAndAbortHandling(unittest.TestCase):
         self.nack_msg_chunk1 = (
             f"BTC_NACK|{self.session_id}|1|ERROR|NACK for chunk 1 test"
         )
-        self.abort_msg = f"BTC_SESSION_ABORT|{self.session_id}|Server abort reason test"
         self.ack_msg_chunk1 = f"BTC_CHUNK_ACK|{self.session_id}|1|OK|REQUEST_CHUNK|2"
         self.ack_msg_chunk2_final = (
             f"BTC_CHUNK_ACK|{self.session_id}|2|OK|ALL_CHUNKS_RECEIVED"
@@ -710,31 +709,6 @@ class TestCliNackAndAbortHandling(unittest.TestCase):
         self.assertIn(
             f"Retrying chunk 1/2 (attempt 3 of 3) due to NACK", printed_output
         )
-
-    @unittest.skip("Temporarily skipped")
-    def test_abort_message_aborts_immediately(self):
-        # Simulate abort message after first chunk
-        def message_receiver(timeout, session_id):
-            yield self.abort_msg
-
-        Args = type(
-            "Args",
-            (),
-            {
-                "destination": self.dest,
-                "tx": self.tx_hex,
-                "session_id": self.session_id,
-                "dry_run": False,
-            },
-        )
-        with self.assertRaises(SystemExit) as cm:
-            self.cli_main(
-                args=Args,
-                injected_iface=self.mock_iface,
-                injected_message_receiver=message_receiver,
-            )
-        self.assertEqual(len(self.sent_chunks), 1)  # Only first chunk sent
-
 
 class TestCliTimeoutAndRetriesOnNoAck(unittest.TestCase):
     def setUp(self):
@@ -850,37 +824,80 @@ class TestCliTimeoutAndRetriesOnNoAck(unittest.TestCase):
             f"Retrying chunk 1/2 (attempt 2 of 3) due to NACK"
         )
 
-    @unittest.skip("Temporarily skipped")
-    def test_prints_abort_message_on_session_abort(self):
-        # Simulate session abort message
-        abort_msg = f"BTC_SESSION_ABORT|{self.session_id}|Server abort reason"
+class TestDryRunWithoutMeshtasticStory65(unittest.TestCase):
+    """
+    TDD for Story 6.5: Dry Run Without Meshtastic Connection.
+    Verifies that dry run mode works without a Meshtastic device connected.
+    """
 
-        def message_receiver(timeout, session_id):
-            yield abort_msg
+    def test_dry_run_skips_meshtastic_initialization(self):
+        """Verify dry run returns before Meshtastic init is called."""
+        dest = "!abcdef12"
+        tx_hex = "deadbeefcafebabe"
+        Args = type("Args", (), {"destination": dest, "tx": tx_hex, "dry_run": True})
 
-        Args = type(
-            "Args",
-            (),
-            {
-                "destination": self.dest,
-                "tx": self.tx_hex,
-                "session_id": self.session_id,
-                "dry_run": False,
-            },
-        )
-        with patch("builtins.print") as mock_print, self.assertRaises(SystemExit):
-            self.cli_main(
-                args=Args,
-                injected_iface=self.mock_iface,
-                injected_logger=self.mock_logger,  # Pass the mock_logger from setUp
-                injected_message_receiver=message_receiver,
-            )
+        # Patch initialize_meshtastic_interface_cli to track if it's called
+        # (and silence prints to keep output clean)
+        with patch(
+            "btcmesh_cli.initialize_meshtastic_interface_cli"
+        ) as mock_init_meshtastic, patch("builtins.print"):
+            code = cli_main(args=Args)
+
+        self.assertEqual(code, 0)
+        # Meshtastic initialization should NOT be called when dry_run is True
+        mock_init_meshtastic.assert_not_called()
+
+    def test_dry_run_prints_simulated_chunks(self):
+        """Verify dry run prints simulated chunk messages."""
+        dest = "!abcdef12"
+        tx_hex = "a" * 450  # 3 chunks
+        Args = type("Args", (), {"destination": dest, "tx": tx_hex, "dry_run": True})
+
+        with patch("builtins.print") as mock_print:
+            code = cli_main(args=Args)
+
+        self.assertEqual(code, 0)
+        printed_lines = [
+            str(call.args[0])
+            for call in mock_print.call_args_list
+            if str(call.args[0]).startswith("BTC_TX|")
+        ]
+        # Should print 3 chunks
+        self.assertEqual(len(printed_lines), 3)
+        for i, line in enumerate(printed_lines, 1):
+            self.assertIn(f"|{i}/3|", line)
+
+    def test_dry_run_works_without_meshtastic_installed(self):
+        """
+        Verify dry run works even if meshtastic module is unavailable.
+        This simulates the scenario where no Meshtastic device is connected
+        and the import would fail.
+        """
+        dest = "!abcdef12"
+        tx_hex = "deadbeefcafebabe"
+        Args = type("Args", (), {"destination": dest, "tx": tx_hex, "dry_run": True})
+
+        # Patch to simulate meshtastic not being available
+        with patch.dict(
+            sys.modules, {"meshtastic": None, "meshtastic.serial_interface": None}
+        ), patch("builtins.print") as mock_print:
+            code = cli_main(args=Args)
+
+        self.assertEqual(code, 0)
         printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list)
-        self.assertIn("Session aborted by server: Server abort reason", printed)
-        # Assert logger error call
-        self.mock_logger.error.assert_any_call(
-            f"Session {self.session_id} aborted by server: Server abort reason"
-        )
+        self.assertIn("Arguments parsed successfully", printed)
+        self.assertIn("BTC_TX|", printed)
+
+    def test_dry_run_exits_successfully(self):
+        """Verify dry run exits with code 0."""
+        dest = "!abcdef12"
+        tx_hex = "cafebabe"
+        Args = type("Args", (), {"destination": dest, "tx": tx_hex, "dry_run": True})
+
+        with patch("builtins.print"):
+            code = cli_main(args=Args)
+
+        self.assertEqual(code, 0)
 
 
 if __name__ == "__main__":

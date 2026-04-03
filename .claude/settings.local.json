@@ -1,0 +1,31 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(python -m unittest:*)"
+    ],
+    "deny": [
+      "Read(**/.env*)",
+      "Read(**/env.php*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/secrets/**)",
+      "Read(**/credentials/**)",
+      "Read(**/.aws/**)",
+      "Read(**/.ssh/**)",
+      "Read(**/docker-compose*.yml)",
+      "Read(**/config/database.yml)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Read(/Users/*)",
+      "Write(/Users/*)",
+      "Edit(/Users/*)",
+      "Glob(/Users/*)",
+      "Bash(env)",
+      "Bash(printenv)",
+      "Bash(whoami)",
+      "Bash(hostname)"
+    ],
+    "ask": []
+  }
+}

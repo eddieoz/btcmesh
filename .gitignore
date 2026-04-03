@@ -136,5 +136,9 @@ desktop.ini
 conda-meta/
 
 # Cursor files
-.cursor/ 
+.cursor/
 .cursor-updates
+
+# BTCMesh runtime data
+logs/
+data/

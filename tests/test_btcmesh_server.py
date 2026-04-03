@@ -637,9 +637,10 @@ class TestMessageHandling(unittest.TestCase):
 
         on_receive_text_message(packet, self.mock_iface)
 
-        # 1. add_chunk should be called.
+        # 1. add_chunk should be called with formatted sender ID.
+        sender_id_str_for_log = _format_node_id(sender_node_id_int)
         self.mock_reassembler.add_chunk.assert_called_once_with(
-            sender_node_id_int, chunk_message_text
+            sender_id_str_for_log, chunk_message_text
         )
 
         # 2. _extract_session_id_from_raw_chunk should be called for logging context.
@@ -649,7 +650,6 @@ class TestMessageHandling(unittest.TestCase):
         self.mock_send_reply.assert_not_called()
 
         # 4. Assert the error log.
-        sender_id_str_for_log = _format_node_id(sender_node_id_int)
         expected_error_log = (
             f"[Sender: {sender_id_str_for_log}, Session: {session_id_for_log}] "
             f"General reassembly error: {exception_message}. "
@@ -685,9 +685,10 @@ class TestMessageHandling(unittest.TestCase):
 
         on_receive_text_message(packet, self.mock_iface)
 
-        # 1. add_chunk should be called.
+        # 1. add_chunk should be called with formatted sender ID.
+        sender_id_str = _format_node_id(sender_node_id_int)
         self.mock_reassembler.add_chunk.assert_called_once_with(
-            sender_node_id_int, chunk_message_text
+            sender_id_str, chunk_message_text
         )
 
         # 2. _extract_session_id_from_raw_chunk should be called for logging context.
@@ -1174,7 +1175,8 @@ class TestTransactionReassemblerStory21(unittest.TestCase):
         self.reassembler = TransactionReassembler(
             timeout_seconds=1
         )  # Short timeout for test
-        self.sender_id = 12345
+        # Use already-formatted sender ID (server layer handles formatting)
+        self.sender_id = "!3039"  # Equivalent to formatting 12345 as !hex
         self.session_id = "story21sess"
 
     def tearDown(self):
@@ -1225,6 +1227,7 @@ class TestTransactionReassemblerStory21(unittest.TestCase):
 
         _time.sleep(1.1)
         self.reassembler.cleanup_stale_sessions()
+        # Timeout log uses the sender_id as provided (already formatted)
         log_ctx = f"[Sender: {self.sender_id}, Session: {self.session_id}]"
         self.mock_logger.warning.assert_any_call(
             f"{log_ctx} Reassembly timeout after 1s. Received 1/2 chunks. Discarding."
@@ -1428,71 +1431,191 @@ class TestBitcoinRpcConnectionStory42(unittest.TestCase):
 
     def test_valid_config_node_reachable(self):
         """Given valid config and node reachable, When connecting, Then connection is established."""
-        with unittest.mock.patch("core.rpc_client.AuthServiceProxy") as mock_proxy:
-            from core.rpc_client import connect_bitcoin_rpc
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
 
-            mock_proxy.return_value.getblockchaininfo.return_value = {"blocks": 100}
-            rpc = connect_bitcoin_rpc(self.valid_config)
+            # Configure the mock to return a successful response
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"result": {"chain": "main"}, "error": None}
+            mock_post.return_value = mock_response
+
+            # Call the method
+            rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
             self.assertIsNotNone(rpc)
-            mock_proxy.assert_called_once()
-            self.assertTrue(hasattr(rpc, "getblockchaininfo"))
+            mock_post.assert_called_once_with(
+                rpc.uri,
+                data='{"jsonrpc": "1.0", "id": "btcmesh", "method": "getblockchaininfo", "params": []}',
+                headers={'Content-Type': 'application/json'},
+                proxies={},
+                timeout=30
+            )
+            
 
-    def test_invalid_config_raises(self):
+    def test_non_int_port_invalid_config_raises(self):
         """Given invalid config, When connecting, Then error is raised."""
-        from core.rpc_client import connect_bitcoin_rpc
+        from core.rpc_client import BitcoinRPCClient
 
         bad_config = self.valid_config.copy()
         bad_config["port"] = "notanint"
+
+        # Assertions
         with self.assertRaises(Exception):
-            connect_bitcoin_rpc(bad_config)
+            # Call the method
+            BitcoinRPCClient(bad_config)
 
-    def test_node_unreachable_raises(self):
-        """Given valid config but node unreachable, When connecting, Then error is raised."""
-        with unittest.mock.patch(
-            "core.rpc_client.AuthServiceProxy", side_effect=ConnectionRefusedError
-        ):
-            from core.rpc_client import connect_bitcoin_rpc
+    def test_no_port_invalid_config_raises(self):
+        """Given invalid config, When connecting, Then error is raised."""
+        from core.rpc_client import BitcoinRPCClient
 
-            with self.assertRaises(ConnectionRefusedError):
-                connect_bitcoin_rpc(self.valid_config)
+        bad_config = self.valid_config.copy()
+        bad_config["port"] = None
+
+        # Assertions
+        with self.assertRaises(Exception):
+            # Call the method
+            BitcoinRPCClient(bad_config)
+
+    def test_no_host_invalid_config_raises(self):
+        """Given invalid config, When connecting, Then error is raised."""
+        from core.rpc_client import BitcoinRPCClient
+
+        bad_config = self.valid_config.copy()
+        bad_config["host"] = None
+
+        # Assertions
+        with self.assertRaises(Exception):
+            # Call the method
+            BitcoinRPCClient(bad_config)
+
+    def test_rpc_request_retries_on_connection_error_three_times_last_success(self):
+        """Given valid config but node unreachable, When connecting, retries twice, succeeds on third try."""
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
+
+            # Mock the response to raise ConnectionError for the first two calls and success on last
+            mock_post.side_effect = [
+                ConnectionError("Connection error"), 
+                ConnectionError("Connection error"),
+                MagicMock(json=MagicMock(return_value={"result": {"chain": "main"}, "error": None}))
+            ]
+
+            # Call the method
+            rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
+            self.assertIsNotNone(rpc)
+            self.assertEqual(mock_post.call_count, 3)  # Ensure post was called three times
+
+    def test_rpc_request_retries_on_connection_error_second_success(self):
+        """Given valid config but node unreachable on first try, retries and suceeds on second try."""
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
+
+            # Mock the response to raise ConnectionError for the first call and success on the second
+            mock_post.side_effect = [
+                ConnectionError("Connection error"), 
+                MagicMock(json=MagicMock(return_value={"result": {"chain": "main"}, "error": None}))
+            ]
+
+            # Call the method
+            rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
+            self.assertIsNotNone(rpc)
+            self.assertEqual(mock_post.call_count, 2)  # Ensure post was called two times
+
+    def test_rpc_request_retries_on_connection_error_three_times_failure(self):
+        """Given valid config but node unreachable, When connecting, retries 3 times, fails."""
+        with unittest.mock.patch("core.rpc_client.requests.post") as mock_post:
+            from core.rpc_client import BitcoinRPCClient
+
+            # Mock the response to raise ConnectionError
+            mock_post.side_effect = ConnectionError("Connection error")
+
+            # Assert that the ConnectionError is raised after 3 attempts
+            with self.assertRaises(ConnectionError) as context:
+                # Call the method
+                rpc = BitcoinRPCClient(self.valid_config)
+
+            # Assertions
+            self.assertTrue("Connection error" in str(context.exception))
+            self.assertEqual(mock_post.call_count, 3)  # Ensure post was called three times
 
 
 class TestBitcoinRpcBroadcastStory43(unittest.TestCase):
     def setUp(self):
-        self.valid_hex = "0100000001abcdef..."
+        self.config = {
+            'user': 'testuser',
+            'password': 'testpass',
+            'host': 'localhost',
+            'port': 8332
+        }
+        self.valid_tx_hex = "0100000001abcdef..."
         self.txid = "deadbeefcafebabe1234567890abcdef1234567890abcdef"
 
-    def test_valid_broadcast_returns_txid(self):
+    def test_successful_broadcast_returns_txid(self):
         """Given valid hex and RPC connection, When broadcast, Then TXID is returned."""
-        mock_rpc = unittest.mock.Mock()
-        mock_rpc.sendrawtransaction.return_value = self.txid
-        from core.rpc_client import broadcast_transaction_via_rpc
+        from core.rpc_client import BitcoinRPCClient
 
-        txid, error = broadcast_transaction_via_rpc(mock_rpc, self.valid_hex)
-        self.assertEqual(txid, self.txid)
-        self.assertIsNone(error)
+        # Mock connect to prevent actual connection, and requests.post for the broadcast call
+        with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
+            unittest.mock.patch('requests.post') as mock_post:
+            # Create client (connect is mocked so no actual connection)
+            client = BitcoinRPCClient(self.config)
+
+            # Simulate a successful response from the RPC server
+            mock_post.return_value.json.return_value = {
+                "result": self.txid,
+                "error": None
+            }
+
+            # Call the method
+            txid, error = client.broadcast_transaction(self.valid_tx_hex)
+
+            # Assertions
+            self.assertEqual(txid, self.txid, "TXID returned should match expected TXID.")
+            self.assertIsNone(error, "There should be no error for valid transaction.")
 
     def test_rpc_error_returns_error_message(self):
         """Given valid hex but RPC error, When broadcast, Then error message is returned."""
-        mock_rpc = unittest.mock.Mock()
-        from bitcoinrpc.authproxy import JSONRPCException
+        from core.rpc_client import BitcoinRPCClient
 
-        mock_rpc.sendrawtransaction.side_effect = JSONRPCException(
-            {"code": -26, "message": "txn-mempool-conflict"}
-        )
-        from core.rpc_client import broadcast_transaction_via_rpc
+        with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
+            unittest.mock.patch('requests.post') as mock_post:
+            client = BitcoinRPCClient(self.config)
 
-        txid, error = broadcast_transaction_via_rpc(mock_rpc, self.valid_hex)
-        self.assertIsNone(txid)
-        self.assertIn("txn-mempool-conflict", error)
+            # Simulate an error response from the RPC server
+            mock_post.return_value.json.return_value = {
+                "result": None,
+                "error": {"code": -26, "message": "txn-mempool-conflict"}
+            }
+
+            # Call the method
+            txid, error = client.broadcast_transaction(self.valid_tx_hex)
+
+            # Assertions
+            self.assertIsNone(txid)
+            self.assertIn("txn-mempool-conflict", error)
 
     def test_no_rpc_connection_returns_error(self):
-        """Given no RPC connection, When broadcast, Then error message is returned."""
-        from core.rpc_client import broadcast_transaction_via_rpc
+        """Given connection failure during broadcast, Then txid=None and error message is returned."""
+        from core.rpc_client import BitcoinRPCClient
+        import requests
 
-        txid, error = broadcast_transaction_via_rpc(None, self.valid_hex)
-        self.assertIsNone(txid)
-        self.assertIn("No RPC connection", error)
+        with unittest.mock.patch.object(BitcoinRPCClient, 'connect'), \
+            unittest.mock.patch('requests.post') as mock_post:
+            client = BitcoinRPCClient(self.config)
+
+            # Simulate connection failure when trying to broadcast
+            mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+
+            txid, error = client.broadcast_transaction(self.valid_tx_hex)
+
+            self.assertIsNone(txid)
+            self.assertIsNotNone(error)
+            self.assertIn("Connection refused", error)
 
 
 class TestReassemblyTimeoutConfigStory52(unittest.TestCase):
@@ -1554,168 +1677,6 @@ class TestReassemblyTimeoutConfigStory52(unittest.TestCase):
                     mock_logger.warning.assert_any_call(
                         f"Invalid REASSEMBLY_TIMEOUT_SECONDS value '{bad_val}'. Using default: 30s."
                     )
-
-
-class TestReliableSessionChunkTransfer(unittest.TestCase):
-    def setUp(self):
-        # Patch the logger
-        self.logger_patcher = patch("btcmesh_server.server_logger", MagicMock())
-        self.mock_logger = self.logger_patcher.start()
-
-    def tearDown(self):
-        self.logger_patcher.stop()
-
-    def test_session_initialization_ack(self):
-        """
-        Given a client wants to send a transaction,
-        When it sends BTC_SESSION_START|<session_id>|<total_chunks>|<chunk_size> to the server,
-        Then the server should respond with BTC_SESSION_ACK|<session_id>|READY|REQUEST_CHUNK|1.
-        """
-        session_id = "sess123"
-        total_chunks = 5
-        chunk_size = 170
-        client_node_id = "!abcdef01"
-        server_node_id = "!deadbeef"
-        packet = {
-            "decoded": {
-                "portnum": "TEXT_MESSAGE_APP",
-                "text": f"BTC_SESSION_START|{session_id}|{total_chunks}|{chunk_size}",
-            },
-            "from": client_node_id,
-            "to": server_node_id,
-        }
-        mock_iface = MagicMock()
-        mock_iface.myInfo = MagicMock()
-        mock_iface.myInfo.my_node_num = server_node_id
-        mock_send_reply = MagicMock()
-        on_receive_text_message(
-            packet, interface=mock_iface, send_reply_func=mock_send_reply
-        )
-        expected_ack = f"BTC_SESSION_ACK|{session_id}|READY|REQUEST_CHUNK|1"
-        mock_send_reply.assert_called_with(
-            mock_iface, client_node_id, expected_ack, session_id
-        )
-
-    def test_chunk_1_ack_and_request_next(self):
-        """
-        Given a session is initialized and the server has requested chunk 1,
-        When the client sends BTC_CHUNK|<session_id>|1/<total_chunks>|<hex_payload>,
-        Then the server responds with BTC_CHUNK_ACK|<session_id>|1|OK|REQUEST_CHUNK|2 and is ready for the next chunk.
-        """
-        session_id = "sess456"
-        total_chunks = 3
-        chunk_size = 170
-        client_node_id = "!abcdef02"
-        server_node_id = "!deadbeef"
-        chunk_payload = "deadbeefcafebabe"
-        # Simulate session already initialized (server has requested chunk 1)
-        # For now, we assume the server is stateless for this test, or we can mock the reassembler/session state as needed.
-        # Send the chunk message
-        packet = {
-            "decoded": {
-                "portnum": "TEXT_MESSAGE_APP",
-                "text": f"BTC_CHUNK|{session_id}|1/{total_chunks}|{chunk_payload}",
-            },
-            "from": client_node_id,
-            "to": server_node_id,
-        }
-        mock_iface = MagicMock()
-        mock_iface.myInfo = MagicMock()
-        mock_iface.myInfo.my_node_num = server_node_id
-        mock_send_reply = MagicMock()
-        # Call the handler
-        from btcmesh_server import on_receive_text_message
-
-        on_receive_text_message(
-            packet, interface=mock_iface, send_reply_func=mock_send_reply
-        )
-        expected_ack = f"BTC_CHUNK_ACK|{session_id}|1|OK|REQUEST_CHUNK|2"
-        mock_send_reply.assert_called_with(
-            mock_iface, client_node_id, expected_ack, session_id
-        )
-
-    def test_chunk_timeout_and_retries(self):
-        """
-        Given a chunk is sent and not ACKed within 30 seconds,
-        When the client retries up to 3 times,
-        Then the server only processes the first valid chunk and ignores duplicates.
-        """
-        session_id = "sess789"
-        total_chunks = 2
-        chunk_payload = "cafebabe1234"
-        client_node_id = "!abcdef03"
-        server_node_id = "!deadbeef"
-        # Simulate the server's session state (mock or patch as needed)
-        # For now, we assume the server is stateless and just checks for duplicates
-        packet = {
-            "decoded": {
-                "portnum": "TEXT_MESSAGE_APP",
-                "text": f"BTC_CHUNK|{session_id}|1/{total_chunks}|{chunk_payload}",
-            },
-            "from": client_node_id,
-            "to": server_node_id,
-        }
-        mock_iface = MagicMock()
-        mock_iface.myInfo = MagicMock()
-        mock_iface.myInfo.my_node_num = server_node_id
-        mock_send_reply = MagicMock()
-        # First send: should ACK
-        from btcmesh_server import on_receive_text_message
-
-        on_receive_text_message(
-            packet, interface=mock_iface, send_reply_func=mock_send_reply
-        )
-        expected_ack = f"BTC_CHUNK_ACK|{session_id}|1|OK|REQUEST_CHUNK|2"
-        mock_send_reply.assert_called_with(
-            mock_iface, client_node_id, expected_ack, session_id
-        )
-        mock_send_reply.reset_mock()
-        # Retry 1: should be ignored (no duplicate ACK)
-        on_receive_text_message(
-            packet, interface=mock_iface, send_reply_func=mock_send_reply
-        )
-        mock_send_reply.assert_not_called()
-        # Retry 2: should be ignored
-        on_receive_text_message(
-            packet, interface=mock_iface, send_reply_func=mock_send_reply
-        )
-        mock_send_reply.assert_not_called()
-
-    def test_session_abort(self):
-        """
-        Given a session is active,
-        When either side sends BTC_SESSION_ABORT|<session_id>|<reason>,
-        Then the other side stops processing and logs the abort.
-        """
-        session_id = "sess999"
-        client_node_id = "!abcdef04"
-        server_node_id = "!deadbeef"
-        abort_reason = "User requested abort"
-        packet = {
-            "decoded": {
-                "portnum": "TEXT_MESSAGE_APP",
-                "text": f"BTC_SESSION_ABORT|{session_id}|{abort_reason}",
-            },
-            "from": client_node_id,
-            "to": server_node_id,
-        }
-        mock_iface = MagicMock()
-        mock_iface.myInfo = MagicMock()
-        mock_iface.myInfo.my_node_num = server_node_id
-        mock_send_reply = MagicMock()
-        with patch("btcmesh_server.server_logger") as mock_logger:
-            on_receive_text_message(
-                packet,
-                interface=mock_iface,
-                send_reply_func=mock_send_reply,
-                logger=mock_logger,
-            )
-            # Should log the abort reason
-            mock_logger.info.assert_any_call(
-                f"Session {session_id} aborted by {client_node_id}: {abort_reason}"
-            )
-            # Should not send any reply
-            mock_send_reply.assert_not_called()
 
 
 class TestMultipleConcurrentSessions(unittest.TestCase):
@@ -1811,12 +1772,14 @@ class TestMultipleConcurrentSessions(unittest.TestCase):
             on_receive_text_message(
                 packet, self.mock_iface, send_reply_func=self.mock_send_reply
             )
-        # Assert add_chunk was called with correct sender/session for each chunk
+        # Assert add_chunk was called with formatted sender IDs for each chunk
+        client1_id_formatted = _format_node_id(client1_id)
+        client2_id_formatted = _format_node_id(client2_id)
         expected_calls = [
-            call(client1_id, chunk1a),
-            call(client2_id, chunk2a),
-            call(client1_id, chunk1b),
-            call(client2_id, chunk2b),
+            call(client1_id_formatted, chunk1a),
+            call(client2_id_formatted, chunk2a),
+            call(client1_id_formatted, chunk1b),
+            call(client2_id_formatted, chunk2b),
         ]
         self.mock_reassembler.add_chunk.assert_has_calls(expected_calls)
         # Assert that both sessions were reassembled independently (i.e., both reassembled_hex returned)

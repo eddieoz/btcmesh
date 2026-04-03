@@ -8,10 +8,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 try:
     from core.config_loader import load_app_config, load_bitcoin_rpc_config
-    from core.rpc_client import connect_bitcoin_rpc
+    from core.rpc_client import BitcoinRPCClient
 
-    # Import Tor management functions and SOCKS port from btcmesh_server
-    from btcmesh_server import TOR_SOCKS_PORT, start_tor, stop_tor
+    # # Import Tor management functions and SOCKS port from btcmesh_server
+    # from btcmesh_server import TOR_SOCKS_PORT, start_tor, stop_tor
 except ImportError as e:
     print(f"Error importing necessary modules: {e}")
     print(
@@ -28,67 +28,47 @@ EXAMPLE_RAW_TX = (
 
 def main():
     print("Starting Bitcoin node connection test...")
-    tor_process = None
-    tor_data_dir = None
-
+    print("\nStep 1: Loading application configuration (for .env)...")
     try:
-        print("\nStep 1: Loading application configuration (for .env)...")
-        try:
-            load_app_config()
-            print("Application configuration loaded.")
-        except Exception as e:
-            print(f"Failed to load application configuration: {e}")
-            sys.exit(1)
+        load_app_config()
+        print("Application configuration loaded.")
+    except Exception as e:
+        print(f"Failed to load application configuration: {e}")
+        sys.exit(1)
 
-        print("\nStep 2: Loading Bitcoin RPC configuration...")
-        rpc_config = None
-        try:
-            rpc_config = load_bitcoin_rpc_config()
-            print(
-                f"Bitcoin RPC config loaded: Host={rpc_config['host']}, "
-                f"Port={rpc_config['port']}, User={rpc_config['user']}"
-            )
-        except ValueError as e:
-            print(f"Failed to load Bitcoin RPC configuration: {e}")
-            print(
-                "Please ensure BITCOIN_RPC_HOST, _PORT, _USER, and _PASSWORD "
-                "are correctly set in your .env file."
-            )
-            sys.exit(1)
-        except Exception as e:
-            print(
-                "An unexpected error occurred while loading Bitcoin RPC "
-                f"configuration: {e}"
-            )
-            sys.exit(1)
+    print("\nStep 2: Loading Bitcoin RPC configuration...")
+    rpc_config = None
+    try:
+        rpc_config = load_bitcoin_rpc_config()
+        print(
+            f"Bitcoin RPC config loaded: Host={rpc_config['host']}, "
+            f"Port={rpc_config['port']}, User={rpc_config['user']}"
+        )
+    except ValueError as e:
+        print(f"Failed to load Bitcoin RPC configuration: {e}")
+        print(
+            "Please ensure BITCOIN_RPC_HOST, _PORT, _USER, and _PASSWORD "
+            "are correctly set in your .env file."
+        )
+        sys.exit(1)
+    except Exception as e:
+        print(
+            "An unexpected error occurred while loading Bitcoin RPC "
+            f"configuration: {e}"
+        )
+        sys.exit(1)
 
-        # Check for .onion address and start Tor if needed
-        if rpc_config["host"].endswith(".onion"):
-            print(
-                f"Detected .onion address ({rpc_config['host']}). "
-                "Attempting to start Tor..."
-            )
-            try:
-                tor_process, tor_data_dir = start_tor(TOR_SOCKS_PORT)
-                print(
-                    f"Tor started successfully. Process ID: "
-                    f"{tor_process.pid if tor_process else 'N/A'}"
-                )
-                proxy_url = f"socks5h://localhost:{TOR_SOCKS_PORT}"
-                rpc_config["proxy"] = proxy_url
-                print(f"Using Tor SOCKS proxy: {proxy_url}")
-            except Exception as e:
-                print(f"Failed to start Tor: {e}")
-                print(
-                    "Ensure Tor executable is correctly placed (e.g., in "
-                    "tor/tor relative to project root) and has permissions."
-                )
-                sys.exit(1)
+    # Check for .onion address and start Tor if needed
+    if rpc_config["host"].endswith(".onion"):
+        print(
+            f"Detected .onion address ({rpc_config['host']}). "
+            "Attempting to start Tor..."
+        )
 
         print("\nStep 3: Attempting to connect to Bitcoin Core RPC node...")
         rpc = None
         try:
-            rpc = connect_bitcoin_rpc(rpc_config)
+            rpc = BitcoinRPCClient(rpc_config)
             print("Successfully initiated connection object.")
         except Exception as e:
             print(
@@ -97,7 +77,7 @@ def main():
                 "Check your Bitcoin node's status, RPC settings, and network "
                 "connectivity."
             )
-            if rpc_config.get("proxy"):
+            if rpc.use_tor:
                 print(
                     "Also, verify Tor is working correctly if a .onion "
                     "address is used."
@@ -154,14 +134,6 @@ def main():
             )
             # We don't sys.exit(1) here as the primary test
             # (getblockchaininfo) passed. This is an additional diagnostic step.
-
-    finally:
-        if tor_process:
-            print("\nCleaning up: Stopping Tor process...")
-            stop_tor(tor_process, tor_data_dir)
-            print("Tor process stopped.")
-        print("\nTest script finished.")
-
 
 if __name__ == "__main__":
     main()

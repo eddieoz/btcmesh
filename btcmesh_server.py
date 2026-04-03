@@ -1,12 +1,8 @@
 from __future__ import annotations
 
+import threading
 import time
-from typing import Optional, Any, Dict, TYPE_CHECKING
-import subprocess
-import tempfile
-import shutil
-import socket
-import os
+from typing import Optional, Any, Dict, Callable, TYPE_CHECKING
 
 # No direct 'import meshtastic' or its components here at the module level.
 # These will be imported inside functions that need them to allow the module
@@ -27,7 +23,8 @@ from core.reassembler import (
     CHUNK_PREFIX,
     CHUNK_PARTS_DELIMITER,
 )
-from core.rpc_client import connect_bitcoin_rpc, broadcast_transaction_via_rpc
+from core.rpc_client import BitcoinRPCClient
+from core.transaction_history import TransactionHistory
 
 if TYPE_CHECKING:
     import meshtastic.serial_interface
@@ -35,6 +32,9 @@ if TYPE_CHECKING:
 # Global instance of the TransactionReassembler
 # Now initialized in main() with config timeout
 transaction_reassembler: TransactionReassembler = None  # type: ignore
+
+# Global instance of TransactionHistory for recording broadcast results
+transaction_history: TransactionHistory = None  # type: ignore
 
 # Placeholder for the main Meshtastic interface, to be set in main()
 # This is needed if on_receive_text_message or other global scope functions
@@ -53,52 +53,6 @@ TRX_CHUNK_BUFFER: Dict[str, Any] = {}  # This will be replaced by reassembler lo
 
 # Ensure .env is loaded at application startup
 load_app_config()
-
-# Tor integration settings
-TOR_BINARY_PATH = os.path.join(os.path.dirname(__file__), "tor", "tor")
-TOR_SOCKS_PORT = 19050  # You can randomize or make configurable
-TOR_CONTROL_PORT = 9051  # Not strictly needed unless you want to control Tor
-
-# --- Reliable Chunked Protocol: Deduplication state ---
-PROCESSED_CHUNKS = set()  # Set of (session_id, chunk_number) tuples
-
-
-def is_onion_address(host):
-    return host.endswith(".onion")
-
-
-def start_tor(socks_port=TOR_SOCKS_PORT):
-    data_dir = tempfile.mkdtemp()
-    tor_cmd = [
-        TOR_BINARY_PATH,
-        "--SocksPort",
-        str(socks_port),
-        "--DataDirectory",
-        data_dir,
-    ]
-    tor_process = subprocess.Popen(
-        tor_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    # Wait for Tor to be ready
-    for _ in range(30):
-        try:
-            s = socket.create_connection(("localhost", socks_port), timeout=2)
-            s.close()
-            return tor_process, data_dir
-        except Exception:
-            time.sleep(1)
-    tor_process.terminate()
-    shutil.rmtree(data_dir)
-    raise RuntimeError("Tor did not start in time")
-
-
-def stop_tor(tor_process, data_dir):
-    if tor_process:
-        tor_process.terminate()
-        tor_process.wait()
-    if data_dir and os.path.exists(data_dir):
-        shutil.rmtree(data_dir)
-
 
 def _format_node_id(node_id_val: Any) -> Optional[str]:
     """Helper to consistently format node IDs to !<hex_string> or return None."""
@@ -269,68 +223,6 @@ def on_receive_text_message(
                 f"Direct text from {sender_node_id_for_reply}: '{message_text}'"
             )
 
-            if message_text.startswith("BTC_SESSION_START|"):
-                # Parse: BTC_SESSION_START|<session_id>|<total_chunks>|<chunk_size>
-                try:
-                    parts = message_text.split("|")
-                    if len(parts) != 4:
-                        raise ValueError("Malformed BTC_SESSION_START message")
-                    _, session_id, total_chunks, chunk_size = parts
-                    ack_msg = f"BTC_SESSION_ACK|{session_id}|READY|REQUEST_CHUNK|1"
-                except Exception:
-                    session_id = parts[1] if len(parts) > 1 else "unknown"
-                    ack_msg = f"BTC_SESSION_ACK|{session_id}|READY|REQUEST_CHUNK|1"
-                logger.debug(
-                    f"[TEST] send_meshtastic_reply called for session {session_id} to {sender_node_id_for_reply} with: {ack_msg}"
-                )
-                send_reply_func(iface, sender_node_id_for_reply, ack_msg, session_id)
-                return
-
-            if message_text.startswith("BTC_SESSION_ABORT|"):
-                # Parse: BTC_SESSION_ABORT|<session_id>|<reason>
-                try:
-                    parts = message_text.split("|", 2)
-                    if len(parts) < 3:
-                        session_id = parts[1] if len(parts) > 1 else "unknown"
-                        reason = "No reason provided"
-                    else:
-                        _, session_id, reason = parts
-                    logger.info(
-                        f"Session {session_id} aborted by {sender_node_id_for_reply}: {reason}"
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to parse BTC_SESSION_ABORT message: {e}")
-                return
-
-            if message_text.startswith("BTC_CHUNK|"):
-                # Parse: BTC_CHUNK|<session_id>|<chunk_number>/<total_chunks>|<hex_payload>
-                try:
-                    parts = message_text.split("|", 3)
-                    if len(parts) != 4:
-                        raise ValueError("Malformed BTC_CHUNK message")
-                    _, session_id, chunk_info, hex_payload = parts
-                    chunk_number, total_chunks = chunk_info.split("/")
-                    chunk_number = int(chunk_number)
-                    total_chunks = int(total_chunks)
-                    sender_node_id_for_reply = _format_node_id(
-                        packet.get("from") or packet.get("fromId")
-                    )
-                    # Deduplication: only process first time
-                    global PROCESSED_CHUNKS
-                    chunk_key = (session_id, chunk_number)
-                    if chunk_key in PROCESSED_CHUNKS:
-                        return  # Ignore duplicate
-                    PROCESSED_CHUNKS.add(chunk_key)
-                    if chunk_number == 1:
-                        ack_msg = f"BTC_CHUNK_ACK|{session_id}|1|OK|REQUEST_CHUNK|2"
-                        send_reply_func(
-                            iface, sender_node_id_for_reply, ack_msg, session_id
-                        )
-                        return
-                except Exception as e:
-                    logger.error(f"Failed to parse BTC_CHUNK message: {e}")
-                    return
-
             if message_text.startswith(CHUNK_PREFIX):
                 # Log every received chunk for diagnostics
                 try:
@@ -350,6 +242,7 @@ def on_receive_text_message(
                     f"Potential BTC transaction chunk from {sender_node_id_for_reply}. Processing..."
                 )
                 try:
+                    reassembled_hex = None  # Initialize for exception handler
                     chunk_number = 1
                     total_chunks = 1
                     try:
@@ -361,8 +254,18 @@ def on_receive_text_message(
                         # If chunk_info is invalid, leave chunk_number/total_chunks as 1
                         pass
                     reassembled_hex = transaction_reassembler.add_chunk(
-                        sender_raw_key_for_reassembler, message_text
+                        sender_node_id_for_reply, message_text
                     )
+
+                    # ACK valid chunk and request next
+                    if chunk_number < total_chunks:
+                        ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|REQUEST_CHUNK|{chunk_number+1}"
+                    elif chunk_number == total_chunks:
+                        ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|ALL_CHUNKS_RECEIVED"
+                    send_reply_func(
+                        iface, sender_node_id_for_reply, ack_msg, session_id
+                    )
+
                     if reassembled_hex:
                         logger.info(
                             f"[Sender: {sender_node_id_for_reply}] Successfully reassembled transaction: "
@@ -374,8 +277,8 @@ def on_receive_text_message(
                             f"[Sender: {sender_node_id_for_reply}, Session: {session_id}] Attempting to broadcast raw TX: {reassembled_hex}"
                         )
 
-                        txid, error = broadcast_transaction_via_rpc(
-                            bitcoin_rpc, reassembled_hex
+                        txid, error = bitcoin_rpc.broadcast_transaction(
+                                reassembled_hex
                         )
                         if txid:
                             ack_msg = f"BTC_ACK|{session_id}|SUCCESS|TXID:{txid}"
@@ -385,6 +288,15 @@ def on_receive_text_message(
                             logger.info(
                                 f"[Sender: {sender_node_id_for_reply}, Session: {session_id}] Broadcast success. TXID: {txid}"
                             )
+                            # Record successful transaction in history
+                            if transaction_history:
+                                transaction_history.add(
+                                    session_id=session_id,
+                                    sender=sender_node_id_for_reply,
+                                    status="success",
+                                    txid=txid,
+                                    raw_tx=reassembled_hex
+                                )
                         else:
                             # Optimize error message for size constraints
                             error_msg = str(error)
@@ -430,15 +342,15 @@ def on_receive_text_message(
                             logger.error(
                                 f"[Sender: {sender_node_id_for_reply}, Session: {session_id}] Broadcast failed: {error}. Sending NACK."
                             )
-                    else:
-                        # ACK valid chunk and request next
-                        if chunk_number < total_chunks:
-                            ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|REQUEST_CHUNK|{chunk_number+1}"
-                        else:
-                            ack_msg = f"BTC_CHUNK_ACK|{session_id}|{chunk_number}|OK|ALL_CHUNKS_RECEIVED"
-                        send_reply_func(
-                            iface, sender_node_id_for_reply, ack_msg, session_id
-                        )
+                            # Record failed transaction in history
+                            if transaction_history:
+                                transaction_history.add(
+                                    session_id=session_id,
+                                    sender=sender_node_id_for_reply,
+                                    status="failed",
+                                    error=str(error),
+                                    raw_tx=reassembled_hex
+                                )
                 except (InvalidChunkFormatError, MismatchedTotalChunksError) as e:
                     tx_session_id_for_nack = (
                         session_id
@@ -493,7 +405,7 @@ def on_receive_text_message(
                         f"General reassembly error: {e}. Notifying sender may be needed."
                     )
                     # Decide if a generic NACK is useful here. Current stories might NACK on timeout instead.
-                except Exception as e:  # Catch-all for unexpected errors in add_chunk
+                except Exception as e:  # Catch-all for unexpected errors in add_chunk or broadcast
                     tx_session_id_for_nack = (
                         _extract_session_id_from_raw_chunk(message_text) or "UNKNOWN"
                     )
@@ -502,6 +414,15 @@ def on_receive_text_message(
                         f"Unexpected error processing chunk: {e}. Not NACKing automatically.",
                         exc_info=True,
                     )
+                    # Record failed transaction in history if we had a reassembled tx
+                    if transaction_history:
+                        transaction_history.add(
+                            session_id=tx_session_id_for_nack,
+                            sender=sender_node_id_for_reply,
+                            status="failed",
+                            error=str(e),
+                            raw_tx=reassembled_hex  # Will be None if error was during reassembly
+                        )
             else:
                 server_logger.info(
                     f"Std direct text from {sender_node_id_for_reply} (not BTC_TX): '{message_text}'"
@@ -662,7 +583,7 @@ def initialize_meshtastic_interface(
                 exc_info=True,
             )
         return None
-    node_num_display = "Unknown Node Num"
+    node_num_display = None
     if (
         hasattr(iface, "myInfo")
         and iface.myInfo
@@ -673,52 +594,95 @@ def initialize_meshtastic_interface(
             node_num_display = formatted_node_id
         elif iface.myInfo.my_node_num is not None:
             node_num_display = str(iface.myInfo.my_node_num)
-    device_path_str = str(getattr(iface, "devicePath", getattr(iface, "devPath", "?")))
+
+    # Get device path, filtering out invalid values
+    device_path_raw = getattr(iface, "devicePath", getattr(iface, "devPath", None))
+    device_path_str = str(device_path_raw) if device_path_raw not in (None, "?", "None") else None
+
+    # Validate that we have valid device info before declaring success
+    if not node_num_display or not node_num_display.startswith("!"):
+        server_logger.error(
+            "Meshtastic interface created but could not retrieve device info. "
+            "This usually means no Meshtastic device is connected. "
+            "Please ensure your device is plugged in and recognized by the system."
+        )
+        try:
+            iface.close()
+        except Exception:
+            pass
+        return None
+
     server_logger.info(
-        f"Meshtastic interface initialized successfully. Device: {device_path_str}, My Node Num: {node_num_display}"
+        f"Meshtastic interface initialized successfully. Device: {device_path_str or '?'}, My Node Num: {node_num_display}"
     )
     return iface
 
 
-def main() -> None:
+def main(stop_event: Optional[threading.Event] = None,
+        rpc_config: Optional[Dict[str, Any]] = None,
+        serial_port: Optional[str] = None,
+        reassembly_timeout: Optional[int] = None,
+        session_update_callback: Optional[Callable[[list], None]] = None) -> None:
     """
     Main function for the BTC Mesh Server.
+
+    Args:
+        stop_event: Optional threading.Event to signal server shutdown.
+                    If None, runs until KeyboardInterrupt.
+        rpc_config: Optional dict with RPC connection settings (host, port, user, password).
+                    If None, loads from environment/.env file.
+        serial_port: Optional serial port for Meshtastic device.
+                    If None, loads from environment or auto-detects.
+        reassembly_timeout: Optional timeout in seconds for transaction reassembly.
+                    If None, loads from environment or uses default (300s).
+        session_update_callback: Optional callback called periodically with list of active
+                    session info dicts. Each dict contains: session_id, sender,
+                    chunks_received, total_chunks, elapsed_seconds.
     """
     global meshtastic_interface_instance
     global transaction_reassembler
+    global transaction_history
     server_logger.info("Starting BTC Mesh Relay Server...")
 
     tor_process = None
     tor_data_dir = None
     try:
-        # --- Story 5.2: Load reassembly timeout from config ---
-        timeout_seconds, timeout_source = load_reassembly_timeout()
+        # --- Story 5.2 & 18.3: Load reassembly timeout from parameter, env, or default ---
+        if reassembly_timeout is not None:
+            timeout_seconds = reassembly_timeout
+            timeout_source = "gui"
+        else:
+            timeout_seconds, timeout_source = load_reassembly_timeout()
         transaction_reassembler = TransactionReassembler(
             timeout_seconds=timeout_seconds
         )
         server_logger.info(
             f"TransactionReassembler initialized with timeout: {timeout_seconds}s (source: {timeout_source})"
         )
-        # --- End Story 5.2 integration ---
+        # --- End Story 5.2 & 18.3 integration ---
+
+        # --- Story 17.3: Initialize transaction history ---
+        transaction_history = TransactionHistory()
+        server_logger.info(
+            f"TransactionHistory initialized. File: {transaction_history.filepath}"
+        )
 
         # --- Story 4.2: Connect to Bitcoin RPC ---
         try:
-            rpc_config = load_bitcoin_rpc_config()
+            # Use injected config if provided, otherwise load from environment
+            if rpc_config is None:
+                rpc_config = load_bitcoin_rpc_config()
             global bitcoin_rpc
-            # Tor integration: if host is .onion, start Tor and set proxy
-            rpc_host = rpc_config.get("host", "")
-            if is_onion_address(rpc_host):
-                server_logger.info(
-                    f"Bitcoin RPC host {rpc_host} is a .onion address. Starting Tor..."
-                )
-                tor_process, tor_data_dir = start_tor()
-                proxy_url = f"socks5h://localhost:{TOR_SOCKS_PORT}"
-                rpc_config["proxy"] = proxy_url
-                server_logger.info(
-                    f"Tor started. Using SOCKS proxy at {proxy_url} for Bitcoin RPC."
-                )
-            bitcoin_rpc = connect_bitcoin_rpc(rpc_config)
-            server_logger.info("Connected to Bitcoin Core RPC node successfully.")
+
+            bitcoin_rpc = BitcoinRPCClient(rpc_config)
+            # Build host display string for GUI status (mask .onion for privacy)
+            host = rpc_config.get('host', 'unknown')
+            port = rpc_config.get('port', '')
+            is_tor = host.endswith('.onion')
+            host_display = "*.onion" if is_tor else f"{host}:{port}"
+            server_logger.info(
+                f"Connected to Bitcoin Core RPC node successfully. Host: {host_display}, Tor: {is_tor}, Chain: {bitcoin_rpc.chain}"
+            )
         except Exception as e:
             bitcoin_rpc = None
             server_logger.error(
@@ -727,8 +691,8 @@ def main() -> None:
         # Store bitcoin_rpc for later use (e.g., as a global or pass to handlers)
         # --- End Story 4.2 integration ---
 
-        # initialize_meshtastic_interface will now use the config loader by default
-        meshtastic_iface = initialize_meshtastic_interface()
+        # initialize_meshtastic_interface will use provided port, or fallback to config/auto-detect
+        meshtastic_iface = initialize_meshtastic_interface(port=serial_port)
 
         if not meshtastic_iface:
             server_logger.error("Failed to initialize Meshtastic interface. Exiting.")
@@ -762,10 +726,24 @@ def main() -> None:
 
         try:
             cleanup_interval = 10  # seconds, same as sleep
+            session_update_interval = 1  # Update session info every second for GUI
             last_cleanup_time = time.time()
+            last_session_update_time = time.time()
 
             while True:
+                # Check for stop signal from GUI
+                if stop_event and stop_event.is_set():
+                    server_logger.info("Stop signal received. Shutting down...")
+                    break
+
                 current_time = time.time()
+
+                # Send session updates to GUI callback
+                if session_update_callback and current_time - last_session_update_time >= session_update_interval:
+                    sessions_info = transaction_reassembler.get_active_sessions_info()
+                    session_update_callback(sessions_info)
+                    last_session_update_time = current_time
+
                 if current_time - last_cleanup_time >= cleanup_interval:
                     server_logger.debug(
                         "Running periodic cleanup of stale reassembly sessions..."
@@ -786,6 +764,16 @@ def main() -> None:
                             f"[Sender: {session_info['sender_id_str']}, Session: {session_info['tx_session_id']}] "
                             f"Session timed out. Sending NACK: {nack_message}"
                         )
+
+                        # Record timeout in transaction history
+                        if transaction_history:
+                            transaction_history.add(
+                                session_id=session_info['tx_session_id'],
+                                sender=session_info['sender_id_str'],
+                                status="failed",
+                                error=session_info['error_message'],
+                                raw_tx=None  # No complete tx for timeouts
+                            )
                         # Ensure global instance is used here if iface is not available otherwise
                         if meshtastic_interface_instance:
                             on_receive_text_message(
@@ -812,10 +800,6 @@ def main() -> None:
             if meshtastic_iface and hasattr(meshtastic_iface, "close"):
                 server_logger.info("Closing Meshtastic interface...")
                 meshtastic_iface.close()
-            if tor_process:
-                server_logger.info("Stopping Tor process...")
-                stop_tor(tor_process, tor_data_dir)
-            server_logger.info("BTC Mesh Relay Server stopped.")
 
     except Exception as e:
         server_logger.error(f"Unhandled exception in main function: {e}", exc_info=True)

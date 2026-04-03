@@ -475,28 +475,28 @@ def cli_main(
                                                     )
                                                     final_tx_confirmed = True
                                                     break  # from final_ack_retries loop
-                                            elif (
-                                                final_msg_type == "BTC_NACK"
-                                                and len(final_msg_parts) >= 3
-                                                and final_msg_parts[2] == "ERROR"
-                                            ):
-                                                error_details = "|".join(
-                                                    final_msg_parts[3:]
-                                                )
-                                                print(
-                                                    f"Relay reported an error broadcasting transaction: {error_details}"
-                                                )
-                                                logger.error(
-                                                    f"Received final BTC_NACK for session {_current_session_id}: {error_details}"
-                                                )
-                                                # Even with NACK, all chunks were sent. Exit with specific error for broadcast failure
-                                                raise SystemExit(
-                                                    3
-                                                )  # Specific exit code for broadcast failure
-                                            else:
-                                                logger.warning(
-                                                    f"Received unexpected final message for session {_current_session_id}: {final_msg_text}"
-                                                )
+                                                elif (
+                                                    final_msg_type == "BTC_NACK"
+                                                    and len(final_msg_parts) >= 3
+                                                    and final_msg_parts[2] == "ERROR"
+                                                ):
+                                                    error_details = "|".join(
+                                                        final_msg_parts[3:]
+                                                    )
+                                                    print(
+                                                        f"Relay reported an error broadcasting transaction: {error_details}"
+                                                    )
+                                                    logger.error(
+                                                        f"Received final BTC_NACK for session {_current_session_id}: {error_details}"
+                                                    )
+                                                    # Even with NACK, all chunks were sent. Exit with specific error for broadcast failure
+                                                    raise SystemExit(
+                                                        3
+                                                    )  # Specific exit code for broadcast failure
+                                                else:
+                                                    logger.warning(
+                                                        f"Received unexpected final message for session {_current_session_id}: {final_msg_text}"
+                                                    )
                                                 # Fall through to retry if not MAX_RETRIES for final ack
                                         except (
                                             StopIteration,
@@ -561,21 +561,6 @@ def cli_main(
                             )
                             # Allow to fall through to the general 'unrecognized message' handling block, which will retry.
                             pass
-                    # Handle BTC_SESSION_ABORT from server
-                    elif msg_type == "BTC_SESSION_ABORT":  # Session ID already checked
-                        abort_reason = (
-                            "|".join(msg_parts[2:])
-                            if len(msg_parts) > 2
-                            else "Unknown reason"
-                        )
-                        print(
-                            f"Session {_current_session_id} aborted by server: {abort_reason}"
-                        )
-                        logger.error(
-                            f"Session {_current_session_id} aborted by server: {abort_reason}. Message: {received_msg_text}"
-                        )
-                        raise SystemExit(2)  # Abort session
-
                     # Fall-through for unrecognized messages if they made it past initial filters
                     # (e.g. correct session ID but unknown type, or malformed known type)
                     # The onReceive filter should catch messages for other sessions or from other senders.

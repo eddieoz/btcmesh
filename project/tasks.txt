@@ -45,7 +45,7 @@ lora/
 
 ---
 
-## Stories (All Concluded)
+## Stories
 
 > **Note:** This EPIC and all its stories are now finished and concluded. Please refer to the next EPIC for current and ongoing work.
 
@@ -211,6 +211,38 @@ lora/
         - [x] *   **When** the timeout occurs.
         - [x] *   **Then** `btcmesh-cli.py` prints "No acknowledgement received from relay for session <tx_session_id>" and exits.
 
+- [x] **Story 6.5: Dry Run Without Meshtastic Connection (`btcmesh-cli.py`)**
+- [x] *   **As a** user of `btcmesh-cli.py`,
+- [x] *   **I want** dry run mode to work without a Meshtastic device connected,
+- [x] *   **So that** I can test and validate transaction chunking logic without hardware.
+    - [x] *   **Scenario:** Dry run executes without Meshtastic device
+        - [x] *   **Given** no Meshtastic device is connected.
+        - [x] *   **And** the user runs `btcmesh-cli.py` with `--dry-run` flag.
+        - [x] *   **When** the CLI executes.
+        - [x] *   **Then** the CLI skips Meshtastic interface initialization.
+        - [x] *   **And** simulates transaction chunking and sending.
+        - [x] *   **And** prints simulated chunk messages to stdout.
+        - [x] *   **And** exits successfully without errors.
+
+- [ ] **Story 6.6: Transaction History Persistence (`btcmesh-cli.py`)**
+- [ ] *   **As a** user of `btcmesh-cli.py`,
+- [ ] *   **I want** my sent transactions to be saved to a local history file,
+- [ ] *   **So that** I can review past transactions across sessions.
+    - [ ] *   **Scenario:** Transaction is logged after successful broadcast
+        - [ ] *   **Given** a transaction is successfully broadcast.
+        - [ ] *   **When** the SUCCESS ACK with TXID is received.
+        - [ ] *   **Then** the transaction is saved to a local history file (e.g., `~/.btcmesh/history.json`).
+        - [ ] *   **And** the history entry includes: timestamp, TXID, destination, raw tx hex, and status.
+    - [ ] *   **Scenario:** Transaction is logged after failure
+        - [ ] *   **Given** a transaction broadcast fails.
+        - [ ] *   **When** the NACK or error is received.
+        - [ ] *   **Then** the transaction is saved with status "failed" and error details.
+    - [ ] *   **Scenario:** History persists across sessions
+        - [ ] *   **Given** the user has sent transactions in previous sessions.
+        - [ ] *   **When** the CLI runs again.
+        - [ ] *   **Then** previous history entries are preserved.
+        - [ ] *   **And** new entries are appended to existing history.
+
 ### 7. End-to-End Flow (With Chunking)
 
 - [x] **Story 7.1: Successful End-to-End Transaction Relay (Chunked)**
@@ -234,6 +266,935 @@ lora/
         - [x] *   **And** the relay sends a DM "BTC_ACK|sess123|SUCCESS|TXID:[actual_txid]" back to the `btcmesh-cli.py` sender's node ID.
         - [x] *   **And** (if Story 6.4 implemented) `btcmesh-cli.py` receives this ACK and prints the success message with TXID.
         - [x] *   **And** all relevant steps are logged by both `btcmesh-cli.py` and the relay device (`btcmesh-server.py`)
+
+---
+
+# EPIC: BTCMesh GUI Client Application
+
+**Goal:** To provide users with a graphical interface for sending Bitcoin transactions via Meshtastic LoRa relay, wrapping the existing `btcmesh_cli.py` functionality in a user-friendly Kivy-based GUI with real-time feedback, connection status, and transaction controls.
+
+**User Persona:** A Bitcoin user who prefers a graphical interface over command-line tools, wants visual feedback on transaction progress, and needs an intuitive way to send transactions via Meshtastic LoRa mesh network.
+
+---
+
+## Stories
+
+> **Note:** This EPIC is still in development
+
+### 8. GUI Application Framework (`btcmesh_gui.py`)
+
+- [x] **Story 8.1: Create GUI Application Structure**
+- [x] *   **As a** user,
+- [x] *   **I want** a graphical application window with proper theming,
+- [x] *   **So that** I can interact with BTCMesh visually.
+    - [x] *   **Scenario:** Application launches with themed window
+        - [x] *   **Given** the user runs `btcmesh_gui.py`.
+        - [x] *   **When** the application starts.
+        - [x] *   **Then** a GUI window opens with Bitcoin-orange themed colors.
+        - [x] *   **And** the window has a dark background (#1E1E1E) for readability.
+        - [x] *   **And** the window title is "BTCMesh Client".
+    *   _Note: Implemented using Kivy App class with custom color scheme (COLOR_PRIMARY=#FF6B00, COLOR_SECUNDARY=#FFFFFF, COLOR_BG=#1E1E1E, COLOR_BG_LIGHT=#2D2D2D)._
+
+- [x] **Story 8.2: Implement Input Fields for Transaction Data**
+- [x] *   **As a** user,
+- [x] *   **I want** text input fields for destination node ID and transaction hex,
+- [x] *   **So that** I can enter the required data for sending a transaction.
+    - [x] *   **Scenario:** User enters destination and transaction hex
+        - [x] *   **Given** the GUI is running.
+        - [x] *   **When** the user types in the destination field.
+        - [x] *   **Then** the input is captured with placeholder hint "!node_id".
+        - [x] *   **And** the transaction hex field accepts multiline input with hint "Raw transaction hex".
+    *   _Note: Implemented TextInput widgets with hint_text, proper sizing, and dark theme styling._
+
+- [x] **Story 8.3: Add Dry Run Toggle Control**
+- [x] *   **As a** user,
+- [x] *   **I want** a toggle to enable/disable dry run mode,
+- [x] *   **So that** I can test transaction sending without actually broadcasting.
+    - [x] *   **Scenario:** User enables dry run mode
+        - [x] *   **Given** the GUI is running.
+        - [x] *   **When** the user toggles the dry run button to "ON".
+        - [x] *   **Then** the button displays "Dry Run: ON" with orange background.
+        - [x] *   **And** subsequent sends will use --dry-run flag.
+    - [x] *   **Scenario:** User disables dry run mode
+        - [x] *   **Given** dry run mode is enabled.
+        - [x] *   **When** the user toggles the button to "OFF".
+        - [x] *   **Then** the button displays "Dry Run: OFF" with dark background.
+        - [x] *   **And** subsequent sends will broadcast for real.
+    *   _Note: Implemented using ToggleButton with state-dependent text and background color. Dry run without Meshtastic connection is handled by Story 6.5 in the CLI._
+
+### 9. GUI Action Buttons and Controls
+
+- [x] **Story 9.1: Implement Send Transaction Button**
+- [x] *   **As a** user,
+- [x] *   **I want** a Send button that initiates transaction sending,
+- [x] *   **So that** I can broadcast my transaction with a single click.
+    - [x] *   **Scenario:** User clicks Send with valid inputs
+        - [x] *   **Given** destination and transaction hex are entered.
+        - [x] *   **And** Meshtastic is connected.
+        - [x] *   **When** the user clicks "Send".
+        - [x] *   **Then** the button becomes disabled during sending.
+        - [x] *   **And** the transaction is sent via `cli_main()` in a background thread.
+        - [x] *   **And** progress is displayed in the status log.
+    - [x] *   **Scenario:** User clicks Send with invalid inputs
+        - [x] *   **Given** destination is empty or invalid.
+        - [x] *   **When** the user clicks "Send".
+        - [x] *   **Then** an error message is displayed in the status log.
+        - [x] *   **And** the send is not initiated.
+    *   _Note: Implemented `on_send_pressed()` with input validation via `validate_send_inputs()` pure function._
+    *   _Note: All scenarios are now covered by tests in `tests/test_btcmesh_gui.py` (see `TestSendButtonValidationStory91`)._
+
+- [x] **Story 9.2: Implement Load Hex Example Button**
+- [x] *   **As a** user,
+- [x] *   **I want** a button to load example transaction hex,
+- [x] *   **So that** I can quickly test the application without manual input.
+    - [x] *   **Scenario:** User clicks Load Hex Example
+        - [x] *   **Given** the GUI is running.
+        - [x] *   **When** the user clicks "Load Hex Example".
+        - [x] *   **Then** the transaction hex field is populated with EXAMPLE_RAW_TX.
+        - [x] *   **And** a confirmation message appears in the status log.
+    *   _Note: Implemented `on_load_example()` loading from `btcmesh_cli.EXAMPLE_RAW_TX`. Does not set destination (user selects from known nodes or enters manually)._
+
+- [x] **Story 9.3: Implement Abort Button**
+- [x] *   **As a** user,
+- [x] *   **I want** an Abort button to cancel a running transaction send,
+- [x] *   **So that** I can stop the process if needed.
+    - [x] *   **Scenario:** User clicks Abort during active send
+        - [x] *   **Given** a transaction send is in progress.
+        - [x] *   **When** the user clicks "Abort".
+        - [x] *   **Then** the abort_requested flag is set.
+        - [x] *   **And** a warning message "Abort requested..." appears in the log.
+        - [x] *   **And** the Abort button becomes disabled.
+        - [x] *   **And** the send thread raises AbortedException on next stdout write.
+        - [x] *   **And** the status log shows "Transaction aborted by user".
+    - [x] *   **Scenario:** Abort button disabled when not sending
+        - [x] *   **Given** no transaction send is in progress.
+        - [x] *   **Then** the Abort button is disabled (grayed out).
+    *   _Note: Implemented using `abort_requested` flag checked in PrintCapture.write(), raising AbortedException to interrupt cli_main()._
+    *   _Note: All scenarios are now covered by tests in `tests/test_btcmesh_gui.py` (see `TestAbortButtonStory93`)._
+
+- [x] **Story 9.4: Implement Clear Log Button**
+- [x] *   **As a** user,
+- [x] *   **I want** a Clear button to reset the status log,
+- [x] *   **So that** I can start fresh without restarting the application.
+    - [x] *   **Scenario:** User clicks Clear Log
+        - [x] *   **Given** the status log contains messages.
+        - [x] *   **When** the user clicks "Clear Log".
+        - [x] *   **Then** all messages in the status log are cleared.
+        - [x] *   **And** a "Log cleared" message is shown.
+        - [x] *   **And** the input fields remain unchanged.
+    *   _Note: Clear button positioned at bottom of window, only clears log (not inputs)._
+
+- [x] **Story 9.5: Disable Controls During Transaction Send**
+- [x] *   **As a** user,
+- [x] *   **I want** input fields and scan buttons to be disabled while sending a transaction,
+- [x] *   **So that** I cannot accidentally change settings mid-transmission.
+    - [x] *   **Scenario:** Controls disabled when sending starts
+        - [x] *   **Given** the user clicks "Send" to start a transaction.
+        - [x] *   **When** the transaction send begins.
+        - [x] *   **Then** the device spinner is disabled.
+        - [x] *   **And** the device scan button is disabled.
+        - [x] *   **And** the destination node spinner is disabled.
+        - [x] *   **And** the destination input field is disabled.
+        - [x] *   **And** the destination scan button is disabled.
+        - [x] *   **And** the transaction hex input field is disabled.
+        - [x] *   **And** the dry run toggle is disabled.
+        - [x] *   **And** the "Load Hex Example" button is disabled.
+    - [x] *   **Scenario:** Controls re-enabled when sending completes
+        - [x] *   **Given** a transaction send is in progress.
+        - [x] *   **When** the transaction completes (success, error, or abort).
+        - [x] *   **Then** all the above controls are re-enabled.
+    *   _Note: Implemented `_set_controls_enabled(enabled)` helper method in BTCMeshGUI. Called with `False` in `on_send_pressed()` after validation, and `True` in `_handle_result()` when `stop_sending` is triggered._
+
+### 10. Status Display and Feedback
+
+- [x] **Story 10.1: Implement Connection Status Display**
+- [x] *   **As a** user,
+- [x] *   **I want** to see the Meshtastic connection status,
+- [x] *   **So that** I know if the device is ready for sending.
+    - [x] *   **Scenario:** Meshtastic connected successfully
+        - [x] *   **Given** the GUI starts.
+        - [x] *   **When** Meshtastic connection succeeds.
+        - [x] *   **Then** the connection label shows "Meshtastic: Connected (!node_id)" in green.
+    - [x] *   **Scenario:** Meshtastic connection failed
+        - [x] *   **Given** the GUI starts.
+        - [x] *   **When** Meshtastic connection fails.
+        - [x] *   **Then** the connection label shows "Meshtastic: Connection failed" in red.
+    *   _Note: Connection status updated via result queue from background init thread._
+    *   _Note: All scenarios are now covered by tests in `tests/test_btcmesh_gui.py` (see `TestConnectionStatusStory101`)._
+
+- [x] **Story 10.2: Implement Scrollable Status Log**
+- [x] *   **As a** user,
+- [x] *   **I want** a scrollable log area showing transaction progress,
+- [x] *   **So that** I can see detailed feedback on what's happening.
+    - [x] *   **Scenario:** Log messages appear during send
+        - [x] *   **Given** a transaction send is in progress.
+        - [x] *   **When** cli_main() logs or prints messages.
+        - [x] *   **Then** messages appear in the scrollable status log.
+        - [x] *   **And** ERROR messages appear in red (COLOR_ERROR).
+        - [x] *   **And** WARNING messages appear in orange (COLOR_WARNING).
+        - [x] *   **And** SUCCESS/ACK messages appear in green (COLOR_SUCCESS).
+        - [x] *   **And** the log auto-scrolls to show newest messages.
+    *   _Note: Implemented StatusLog widget with ScrollView, color-coded messages via `get_log_color()` and `get_print_color()` pure functions. Uses QueueLogHandler and ResultAction for thread-safe message passing from background threads to GUI._
+    *   _Note: All scenarios are now covered by tests in `tests/test_btcmesh_gui.py` (see `TestStatusLogStory102`)._
+
+- [x] **Story 10.3: Implement Success Popup**
+- [x] *   **As a** user,
+- [x] *   **I want** a clear popup notification when my transaction succeeds,
+- [x] *   **So that** I immediately know my transaction was broadcast.
+    - [x] *   **Scenario:** Transaction broadcast succeeds
+        - [x] *   **Given** the relay returns a SUCCESS ACK with TXID.
+        - [x] *   **When** the GUI processes the tx_success result.
+        - [x] *   **Then** a success popup appears with "Transaction Sent!" and the TXID.
+        - [x] *   **And** the popup has an OK button to dismiss.
+    *   _Note: Implemented `_show_success_popup()` using Kivy Popup widget._
+    *   _Note: All scenarios are now covered by tests in `tests/test_btcmesh_gui.py` (see `TestPopupsStory103`)._
+
+- [x] **Story 10.4: Add Copy TXID to Clipboard Button**
+- [x] *   **As a** user,
+- [x] *   **I want** a button to copy the TXID to my clipboard,
+- [x] *   **So that** I can easily paste it elsewhere to track or share my transaction.
+    - [x] *   **Scenario:** User clicks Copy button
+        - [x] *   **Given** the success popup is displayed with a TXID.
+        - [x] *   **When** the user clicks the "Copy" button.
+        - [x] *   **Then** the TXID is copied to the system clipboard.
+        - [x] *   **And** the button text changes to "Copied!" briefly as feedback.
+    *   _Note: Implemented using Kivy's Clipboard.copy() with visual feedback via Clock.schedule_once()._
+
+### 11. Connection & Status Enhancements
+
+- [x] **Story 11.1: Device Selection Dropdown**
+- [x] *   **As a** user,
+- [x] *   **I want** a dropdown to select from multiple connected Meshtastic devices,
+- [x] *   **So that** I can choose which device to use for sending transactions.
+    - [x] *   **Scenario:** Multiple devices available
+        - [x] *   **Given** multiple Meshtastic devices are connected to the system.
+        - [x] *   **When** the user opens the device dropdown.
+        - [x] *   **Then** all available devices are listed with their serial ports.
+        - [x] *   **And** the user can select a device to use.
+    - [x] *   **Scenario:** Single device available
+        - [x] *   **Given** only one Meshtastic device is connected.
+        - [x] *   **When** the GUI starts.
+        - [x] *   **Then** the device is automatically selected.
+        - [x] *   **And** the dropdown shows the selected device.
+    - [x] *   **Scenario:** No devices available
+        - [x] *   **Given** no Meshtastic devices are connected.
+        - [x] *   **When** the GUI starts.
+        - [x] *   **Then** the dropdown shows "No devices found".
+        - [x] *   **And** the Send button is disabled.
+
+- [x] **Story 11.2: Known Nodes Dropdown for Destination**
+- [x] *   **As a** user,
+- [x] *   **I want** to select a destination from a list of known Meshtastic nodes,
+- [x] *   **So that** I don't have to manually type the node ID.
+    - [x] *   **Scenario:** Nodes available after connection
+        - [x] *   **Given** the Meshtastic device is connected.
+        - [x] *   **When** the node database has been populated.
+        - [x] *   **Then** the destination dropdown shows known nodes formatted as "NodeName (!nodeId)".
+        - [x] *   **And** selecting a node fills the destination field with the node ID.
+    - [x] *   **Scenario:** No known nodes
+        - [x] *   **Given** the Meshtastic device is connected.
+        - [x] *   **When** the node database is empty.
+        - [x] *   **Then** the dropdown shows "No nodes found".
+        - [x] *   **And** the user can still manually type a destination.
+    - [x] *   **Scenario:** Refresh node list
+        - [x] *   **Given** the Meshtastic device is connected.
+        - [x] *   **When** the user clicks the "Scan" button next to destination.
+        - [x] *   **Then** the node list is updated from the current device node database.
+    - [x] *   **Scenario:** Manual entry always available
+        - [x] *   **Given** the destination dropdown shows known nodes.
+        - [x] *   **When** the user selects "Enter manually..." from the dropdown.
+        - [x] *   **Then** the destination input field is cleared for fresh entry.
+        - [x] *   **And** the user can type any valid node ID in the destination field.
+    - [x] *   **Scenario:** Cannot send to own node
+        - [x] *   **Given** the user is connected to a Meshtastic device.
+        - [x] *   **When** the user enters their own node ID as destination.
+        - [x] *   **Then** an error message is shown: "Cannot send to your own node".
+        - [x] *   **And** the transaction is not sent.
+    *   _Implementation notes:_
+    *   _Access nodes via `interface.nodes` dictionary after connection._
+    *   _Each node has: `user.id`, `user.longName`, `user.shortName`, `lastHeard`, `hopsAway`._
+    *   _Filter out own node (the connected device) from the list._
+    *   _Sort nodes by `lastHeard` timestamp (most recent first)._
+    *   _Format: "NodeName (!nodeId)"._
+
+- [x] **Story 11.3: Display Connected Device Name**
+- [x] *   **As a** user,
+- [x] *   **I want** to see the name of my connected Meshtastic device,
+- [x] *   **So that** I can identify which device I'm using at a glance.
+    - [x] *   **Scenario:** Device name shown in connection status
+        - [x] *   **Given** the Meshtastic device is connected.
+        - [x] *   **When** the device has a configured node name.
+        - [x] *   **Then** the connection status shows "Meshtastic: Connected - NodeName (!nodeId)".
+    - [x] *   **Scenario:** No device name configured
+        - [x] *   **Given** the Meshtastic device is connected.
+        - [x] *   **When** the device has no longName configured.
+        - [x] *   **Then** the connection status shows "Meshtastic: Connected (!nodeId)".
+    *   _Implementation notes:_
+    *   _Get own node info via `get_own_node_name()` helper using `interface.myInfo.my_node_num` and `interface.nodes`._
+    *   _Extract `user.longName` or `user.shortName` as fallback._
+    *   _Update connection label format in `process_result()` for 'connected' result type._
+
+### 12. UX Improvements
+
+- [ ] **Story 12.1: Client Settings Panel**
+- [ ] *   **As a** client user,
+- [ ] *   **I want** a settings panel to configure Meshtastic device and default options,
+- [ ] *   **So that** I can customize the client without editing config files.
+    - [ ] *   **Scenario:** User opens settings panel
+        - [ ] *   **Given** the client GUI is running.
+        - [ ] *   **When** the user clicks the "Settings" button.
+        - [ ] *   **Then** a settings panel opens with client configuration options.
+    - [ ] *   **Scenario:** User configures Meshtastic device path
+        - [ ] *   **Given** the settings panel is open.
+        - [ ] *   **When** the user enters a custom serial port path.
+        - [ ] *   **Then** the setting is saved to the config file.
+        - [ ] *   **And** the GUI reconnects using the new path.
+    - [ ] *   **Scenario:** User sets default relay destination
+        - [ ] *   **Given** the settings panel is open.
+        - [ ] *   **When** the user enters a default relay node ID (e.g., !abcdef12).
+        - [ ] *   **Then** the setting is saved.
+        - [ ] *   **And** the destination field is pre-filled on next launch.
+
+### 13. Convenience Features
+
+- [ ] **Story 13.1: QR Code Scanner for Transaction Hex**
+- [ ] *   **As a** user,
+- [ ] *   **I want** to scan a QR code to input transaction hex,
+- [ ] *   **So that** I can easily transfer transactions from another device.
+    - [ ] *   **Scenario:** User scans QR code successfully
+        - [ ] *   **Given** the GUI is running.
+        - [ ] *   **When** the user clicks "Scan QR" and presents a QR code with transaction hex.
+        - [ ] *   **Then** the camera opens and scans the QR code.
+        - [ ] *   **And** the transaction hex field is populated with the scanned data.
+        - [ ] *   **And** a confirmation message appears in the status log.
+    - [ ] *   **Scenario:** QR code scan fails
+        - [ ] *   **Given** the GUI is running.
+        - [ ] *   **When** the QR code cannot be read or contains invalid data.
+        - [ ] *   **Then** an error message is displayed.
+        - [ ] *   **And** the transaction hex field remains unchanged.
+
+- [ ] **Story 13.2: Paste from Clipboard Button**
+- [ ] *   **As a** user,
+- [ ] *   **I want** a button to paste transaction hex from my clipboard,
+- [ ] *   **So that** I can quickly input copied transaction data.
+    - [ ] *   **Scenario:** User pastes valid hex from clipboard
+        - [ ] *   **Given** the clipboard contains valid transaction hex.
+        - [ ] *   **When** the user clicks the "Paste" button.
+        - [ ] *   **Then** the transaction hex field is populated with clipboard content.
+        - [ ] *   **And** a confirmation message appears in the status log.
+    - [ ] *   **Scenario:** Clipboard is empty or contains invalid data
+        - [ ] *   **Given** the clipboard is empty or contains non-hex data.
+        - [ ] *   **When** the user clicks the "Paste" button.
+        - [ ] *   **Then** an appropriate message is displayed (empty or invalid).
+        - [ ] *   **And** the transaction hex field remains unchanged.
+
+- [ ] **Story 13.3: Transaction History UI**
+- [ ] *   **As a** user,
+- [ ] *   **I want** to view and interact with my transaction history in the GUI,
+- [ ] *   **So that** I can review past transactions and quickly resend them.
+    - [ ] *   **Scenario:** User views transaction history
+        - [ ] *   **Given** the GUI is running and transaction history exists (from Story 6.6).
+        - [ ] *   **When** the user opens the transaction history view.
+        - [ ] *   **Then** past transactions are displayed in chronological order.
+        - [ ] *   **And** each entry shows: truncated TXID, timestamp, destination, and status.
+    - [ ] *   **Scenario:** User copies TXID from history
+        - [ ] *   **Given** the transaction history view is open.
+        - [ ] *   **When** the user clicks copy on a transaction entry.
+        - [ ] *   **Then** the TXID is copied to the clipboard.
+    - [ ] *   **Scenario:** User reloads a transaction for resending
+        - [ ] *   **Given** the transaction history view is open.
+        - [ ] *   **When** the user selects a transaction to reload.
+        - [ ] *   **Then** the destination and transaction hex fields are populated.
+        - [ ] *   **And** the user can modify and resend the transaction.
+    *   _Note: Depends on Story 6.6 for persistence. GUI provides view/interaction layer._
+
+### 14. Visual Enhancements
+
+- [ ] **Story 14.1: Dark/Light Theme Toggle**
+- [ ] *   **As a** user,
+- [ ] *   **I want** to toggle between dark and light themes,
+- [ ] *   **So that** I can use the application comfortably in different lighting conditions.
+    - [ ] *   **Scenario:** User switches to light theme
+        - [ ] *   **Given** the GUI is running in dark theme (default).
+        - [ ] *   **When** the user clicks the theme toggle button.
+        - [ ] *   **Then** the application switches to light theme.
+        - [ ] *   **And** background becomes light, text becomes dark.
+        - [ ] *   **And** the preference is saved for future sessions.
+    - [ ] *   **Scenario:** User switches to dark theme
+        - [ ] *   **Given** the GUI is running in light theme.
+        - [ ] *   **When** the user clicks the theme toggle button.
+        - [ ] *   **Then** the application switches to dark theme.
+        - [ ] *   **And** the original dark color scheme is restored.
+
+---
+
+# EPIC: BTCMesh Server GUI Application
+
+**Goal:** To provide relay operators with a graphical interface for running and monitoring the BTCMesh server (`btcmesh_server.py`), displaying real-time connection status, transaction processing, and network information in a user-friendly Kivy-based GUI.
+
+**User Persona:** A Bitcoin relay operator who wants visual feedback on server status, connection health, incoming transactions, and network configuration without relying solely on log files or terminal output.
+
+---
+
+## Stories
+
+### 15. Server GUI Application Framework (`btcmesh_server_gui.py`)
+
+- [x] **Story 15.1: Create Server GUI Application Structure**
+- [x] *   **As a** relay operator,
+- [x] *   **I want** a graphical application window for the server,
+- [x] *   **So that** I can monitor the relay visually.
+    - [x] *   **Scenario:** Server application launches with themed window
+        - [x] *   **Given** the operator runs `btcmesh_server_gui.py`.
+        - [x] *   **When** the application starts.
+        - [x] *   **Then** a GUI window opens with Bitcoin-orange themed colors.
+        - [x] *   **And** the window has a dark background (#1E1E1E) for readability.
+        - [x] *   **And** the window title is "BTCMesh Relay Server".
+    *   _Note: Reuse color scheme from client GUI (COLOR_PRIMARY=#FF6B00, COLOR_BG=#1E1E1E, COLOR_BG_LIGHT=#2D2D2D)._
+
+- [x] **Story 15.2: Implement Start/Stop Server Controls**
+- [x] *   **As a** relay operator,
+- [x] *   **I want** buttons to start and stop the relay server,
+- [x] *   **So that** I can control the server without using the terminal.
+    - [x] *   **Scenario:** Operator starts the server
+        - [x] *   **Given** the server GUI is running and server is stopped.
+        - [x] *   **When** the operator clicks "Start Server".
+        - [x] *   **Then** the server initializes Meshtastic and Bitcoin RPC connections.
+        - [x] *   **And** the server starts listening for incoming transaction chunks.
+        - [x] *   **And** the Start button becomes disabled.
+        - [x] *   **And** the Stop button becomes enabled.
+        - [x] *   **And** a "Server started" message appears in the activity log.
+    - [x] *   **Scenario:** Operator stops the server
+        - [x] *   **Given** the server is running.
+        - [x] *   **When** the operator clicks "Stop Server".
+        - [x] *   **Then** the server gracefully closes connections.
+        - [x] *   **And** the Stop button becomes disabled.
+        - [x] *   **And** the Start button becomes enabled.
+        - [x] *   **And** a "Server stopped" message appears in the activity log.
+    *   _Note: Implemented by adding stop_event parameter to btcmesh_server.main() and refactoring btcmesh_server_gui.py to wrap main() via log capture (same pattern as client GUI wrapping cli_main). Status labels update by parsing log messages._
+
+### 16. Connection Status Displays
+
+- [x] **Story 16.1: Display Meshtastic Connection Status**
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to see the Meshtastic device connection status,
+- [x] *   **So that** I know if the relay is ready to receive transactions.
+    - [x] *   **Scenario:** Meshtastic connected successfully
+        - [x] *   **Given** the server starts.
+        - [x] *   **When** Meshtastic connection succeeds.
+        - [x] *   **Then** a status indicator shows "Meshtastic: Connected" with green icon.
+        - [x] *   **And** the connected device path is displayed (e.g., "/dev/ttyUSB0").
+        - [x] *   **And** the server's node ID is displayed (e.g., "!abcdef12").
+    - [x] *   **Scenario:** Meshtastic connection failed
+        - [x] *   **Given** the server starts.
+        - [x] *   **When** Meshtastic connection fails.
+        - [x] *   **Then** a status indicator shows "Meshtastic: Disconnected" with red icon.
+        - [x] *   **And** an error message is displayed.
+    - [ ] *   **Scenario:** Meshtastic device selection
+        - [ ] *   **Given** multiple Meshtastic devices are connected.
+        - [ ] *   **When** the server settings allow device selection.
+        - [ ] *   **Then** the operator can choose which device to use.
+    *   _Note: Reuse device scanning logic from client GUI (Story 11.1). Device selection deferred to Story 18.2 (Meshtastic Device Settings)._
+
+- [x] **Story 16.2: Display Bitcoin RPC Connection Status**
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to see the Bitcoin RPC node connection status,
+- [x] *   **So that** I know if the relay can broadcast transactions.
+    - [x] *   **Scenario:** Bitcoin RPC connected successfully
+        - [x] *   **Given** the server starts with valid RPC configuration.
+        - [x] *   **When** RPC connection succeeds.
+        - [x] *   **Then** a status indicator shows "Bitcoin RPC: Connected" with green icon.
+        - [x] *   **And** the RPC host is displayed (masked if .onion for privacy).
+    - [x] *   **Scenario:** Bitcoin RPC connection failed
+        - [x] *   **Given** the server starts.
+        - [x] *   **When** RPC connection fails.
+        - [x] *   **Then** a status indicator shows "Bitcoin RPC: Disconnected" with red icon.
+        - [x] *   **And** an error message is displayed (auth failed, unreachable, etc.).
+    - [x] *   **Scenario:** Bitcoin RPC using Tor
+        - [x] *   **Given** the RPC host is a .onion address.
+        - [x] *   **When** connection is established via Tor.
+        - [x] *   **Then** a "Tor" badge is displayed next to the RPC status.
+    *   _Note: Implemented by enhancing RPC connection log message in btcmesh_server.py to include host and Tor info. GUI parses log and displays "Bitcoin RPC: Connected (host:port)" or "Bitcoin RPC: Connected (*.onion) [Tor]"._
+
+- [x] **Story 16.3: Display Network Badge (Mainnet/Testnet)**
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to see which Bitcoin network the relay is connected to,
+- [x] *   **So that** I can confirm I'm operating on the intended network.
+    - [x] *   **Scenario:** Connected to mainnet
+        - [x] *   **Given** the RPC node is running mainnet.
+        - [x] *   **When** the server queries `getblockchaininfo`.
+        - [x] *   **Then** a "MAINNET" badge is displayed prominently.
+        - [x] *   **And** the badge has an orange/bitcoin color.
+    - [x] *   **Scenario:** Connected to testnet3
+        - [x] *   **Given** the RPC node is running testnet3.
+        - [x] *   **When** the server queries network info.
+        - [x] *   **Then** a "TESTNET3" badge is displayed.
+        - [x] *   **And** the badge has a distinct color (e.g., blue).
+    - [x] *   **Scenario:** Connected to testnet4
+        - [x] *   **Given** the RPC node is running testnet4.
+        - [x] *   **When** the server queries network info.
+        - [x] *   **Then** a "TESTNET4" badge is displayed.
+    - [x] *   **Scenario:** Connected to signet
+        - [x] *   **Given** the RPC node is running signet.
+        - [x] *   **When** the server queries network info.
+        - [x] *   **Then** a "SIGNET" badge is displayed.
+        - [x] *   **And** the badge has a distinct color (e.g., purple).
+    *   _Note: Implemented by storing chain from getblockchaininfo in BitcoinRPCClient.chain, including it in RPC log message, parsing in GUI, and displaying "Network: MAINNET/TESTNET3/TESTNET4/SIGNET" with color-coded badge (orange/blue/blue/purple)._
+
+### 17. Activity Monitoring
+
+- [x] **Story 17.1: Implement Activity Log Display** *(Implemented)*
+- [x] *   **As a** relay operator,
+- [x] *   **I want** a scrollable activity log showing server events,
+- [x] *   **So that** I can monitor what the relay is doing in real-time.
+    - [x] *   **Scenario:** Log shows connection events
+        - [x] *   **Given** the server GUI is running.
+        - [x] *   **When** the server connects/disconnects from Meshtastic or RPC.
+        - [x] *   **Then** the event is logged with timestamp and color coding.
+        - [x] *   *Note: Log formatter uses `[HH:MM:SS] message` format*
+    - [x] *   **Scenario:** Log shows incoming messages
+        - [x] *   **Given** the server is running.
+        - [x] *   **When** a Meshtastic message is received.
+        - [x] *   **Then** the message source and type are logged.
+        - [x] *   **And** BTC_TX chunks are highlighted.
+        - [x] *   *Note: Server logs "Potential BTC transaction chunk from..." messages*
+    - [x] *   **Scenario:** Log shows transaction events
+        - [x] *   **Given** the server is processing a transaction.
+        - [x] *   **When** chunks are received, reassembled, or broadcast.
+        - [x] *   **Then** each step is logged with appropriate color (green=success, red=error).
+        - [x] *   *Note: Uses get_log_color() from gui_common.py per log_color_spec.md*
+    - [x] *   **Scenario:** Log auto-scrolls
+        - [x] *   **Given** the activity log has multiple entries.
+        - [x] *   **When** new entries are added.
+        - [x] *   **Then** the log auto-scrolls to show the newest entry.
+        - [x] *   *Note: StatusLog.add_message() schedules scroll_y=0 via Clock*
+    *   _Note: Reuses StatusLog component from core/gui_common.py_
+    *   _Note: See [project/log_color_spec.md](log_color_spec.md) for log message color categorization requirements._
+
+- [x] **Story 17.2: Display Active Sessions** *(Implemented)*
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to see currently active transaction sessions,
+- [x] *   **So that** I can monitor transactions in progress.
+    - [x] *   **Scenario:** Active session displayed
+        - [x] *   **Given** a transaction is being reassembled.
+        - [x] *   **When** chunks are being received.
+        - [x] *   **Then** the session is displayed showing: session ID, sender node, chunks received/total, time elapsed.
+        - [x] *   *Note: Added get_active_sessions_info() to TransactionReassembler*
+        - [x] *   *Note: Server main() accepts session_update_callback parameter*
+        - [x] *   *Note: GUI displays sessions in "Active Sessions" section with live updates*
+    - [x] *   **Scenario:** Session count always visible
+        - [x] *   **Given** any number of active sessions (0 to many).
+        - [x] *   **Then** a session count label is always visible outside the scroll area.
+        - [x] *   **And** shows "0 active sessions", "1 active session", "5 active sessions" etc.
+        - [x] *   **And** color is gray when 0, amber/warning when >0.
+        - [x] *   *Note: session_count_label added above sessions_scroll ScrollView*
+    - [x] *   **Scenario:** Sessions displayed in ScrollView
+        - [x] *   **Given** more than 3 active sessions.
+        - [x] *   **When** the list exceeds visible space.
+        - [x] *   **Then** sessions are displayed in a fixed-height ScrollView (85px).
+        - [x] *   **And** up to 3 sessions fit without scrolling.
+        - [x] *   **And** orange scrollbar appears for 4+ sessions.
+        - [x] *   *Note: Uses ScrollView with bar_color=COLOR_PRIMARY*
+        - [x] *   *Note: Inner BoxLayout uses minimum_height binding*
+    - [x] *   **Scenario:** Session completes
+        - [x] *   **Given** an active session is displayed.
+        - [x] *   **When** all chunks are received and transaction is broadcast.
+        - [x] *   **Then** the session is removed from active list.
+        - [x] *   **And** success is logged in activity log.
+        - [x] *   *Note: Session automatically removed when not in next update*
+    - [x] *   **Scenario:** Session times out
+        - [x] *   **Given** an active session is displayed.
+        - [x] *   **When** the reassembly timeout is reached.
+        - [x] *   **Then** the session is removed from active list.
+        - [x] *   **And** timeout error is logged in activity log.
+        - [x] *   *Note: Timeout handled by existing cleanup_stale_sessions() with NACK logging*
+
+- [x] **Story 17.3: Display Transaction History**
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to see a history of processed transactions,
+- [x] *   **So that** I can review relay activity.
+    - [x] *   **Scenario:** Successful transaction in history
+        - [x] *   **Given** a transaction was successfully broadcast.
+        - [x] *   **When** the operator views transaction history.
+        - [x] *   **Then** the entry shows: timestamp, sender node, TXID (truncated), status (success).
+        - [x] *   *Note: History button opens popup with scrollable list of transactions*
+        - [x] *   *Note: Entries stored in data/transaction_history.json, persists across restarts*
+    - [x] *   **Scenario:** Failed transaction in history
+        - [x] *   **Given** a transaction failed (reassembly, validation, or RPC error).
+        - [x] *   **When** the operator views transaction history.
+        - [x] *   **Then** the entry shows: timestamp, sender node, error message, status (failed).
+    - [x] *   **Scenario:** View transaction details
+        - [x] *   **Given** the transaction history is displayed.
+        - [x] *   **When** the operator clicks on a transaction entry.
+        - [x] *   **Then** a detail popup shows: full timestamp, sender, session ID, status.
+        - [x] *   **And** for success: full TXID with Copy button.
+        - [x] *   **And** for failure: full error message.
+        - [x] *   **And** scrollable raw transaction hex with Copy button.
+    - [x] *   **Scenario:** Copy TXID from history
+        - [x] *   **Given** the transaction detail popup is open for a successful transaction.
+        - [x] *   **When** the operator clicks "Copy TXID".
+        - [x] *   **Then** the full TXID is copied to clipboard.
+    - [x] *   **Scenario:** Copy raw transaction from history
+        - [x] *   **Given** the transaction detail popup is open.
+        - [x] *   **When** the operator clicks "Copy Raw TX".
+        - [x] *   **Then** the raw transaction hex is copied to clipboard.
+
+- [ ] **Story 17.4: Transaction History Enhancements (Future)**
+- [ ] *   **As a** relay operator,
+- [ ] *   **I want** advanced history management features,
+- [ ] *   **So that** I can efficiently browse large transaction histories.
+    - [ ] *   **Scenario:** Pagination support
+        - [ ] *   **Given** a large transaction history (100+ entries).
+        - [ ] *   **When** the operator views history.
+        - [ ] *   **Then** results are paginated (e.g., 20 per page).
+    - [ ] *   **Scenario:** API limit parameter
+        - [ ] *   **Given** the `TransactionHistory.get_all()` method.
+        - [ ] *   **Then** an optional `limit` parameter restricts returned entries.
+    - [ ] *   **Scenario:** Archive old records
+        - [ ] *   **Given** history file exceeds a size threshold.
+        - [ ] *   **When** cleanup runs.
+        - [ ] *   **Then** old entries are archived to a separate file.
+    - [ ] *   **Scenario:** Rebroadcast failed transaction
+        - [ ] *   **Given** a failed transaction in history with raw_tx.
+        - [ ] *   **When** the operator clicks "Retry".
+        - [ ] *   **Then** the raw_tx is resubmitted to Bitcoin RPC.
+
+### 18. Server Settings Panel
+
+- [x] **Story 18.1: Implement Bitcoin RPC Settings** *(Implemented)*
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to configure Bitcoin RPC settings through the GUI,
+- [x] *   **So that** I can set up or change the RPC connection without editing files.
+    - [ ] *   **Scenario:** Operator configures RPC credentials
+        - [x] *   **Given** the settings panel is open.
+        - [x] *   **When** the operator enters RPC host, port, user, and password.
+        - [ ] *   **Then** the settings are validated and saved.
+        - [ ] *   **And** the server reconnects with new credentials.
+        - [x] *   *Note: Input fields load defaults from .env via config_loader*
+    - [x] *   **Scenario:** Operator tests RPC connection
+        - [x] *   **Given** RPC credentials are entered.
+        - [x] *   **When** the operator clicks "Test Connection".
+        - [x] *   **Then** a test connection is attempted (runs in background thread).
+        - [x] *   **And** success or failure is displayed in activity log.
+        - [x] *   *Note: Success message shows "via Tor" suffix for .onion addresses*
+    - [x] *   **Scenario:** Password field is masked
+        - [x] *   **Given** the settings panel shows RPC password field.
+        - [x] *   **Then** the password is displayed as asterisks.
+        - [x] *   **And** a "Show" toggle reveals the password.
+        - [x] *   *Note: Host field is also masked by default with Show/Hide toggle*
+        - [x] *   *Note: Uses create_toggle_button() factory from gui_common.py*
+    - [x] *   **Scenario:** Tor detection for .onion addresses
+        - [x] *   **Given** the operator enters a .onion address as RPC host.
+        - [x] *   **Then** the GUI indicates Tor will be used (success message shows "via Tor").
+        - [x] *   **And** validates that Tor service is reachable (port 9050).
+    - [x] *   **Scenario:** RPC settings disabled when server is running
+        - [x] *   **Given** the server is running.
+        - [x] *   **Then** all RPC input fields are disabled.
+        - [x] *   **And** the Test Connection button is disabled.
+        - [x] *   **When** the server stops (or fails to start).
+        - [x] *   **Then** all RPC settings are re-enabled.
+    - [x] *   **Scenario:** Start Server disabled during Test Connection
+        - [x] *   **Given** the operator clicks "Test Connection".
+        - [x] *   **Then** the Start Server button is disabled.
+        - [x] *   **When** the test completes (success or failure).
+        - [x] *   **Then** the Start Server button is re-enabled.
+
+- [x] **Story 18.2: Implement Meshtastic Device Settings** *(Implemented)*
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to configure the Meshtastic device through the GUI,
+- [x] *   **So that** I can select or change the device without editing files.
+    - [x] *   **Scenario:** Operator selects device from dropdown
+        - [x] *   **Given** the settings panel is open.
+        - [x] *   **When** multiple Meshtastic devices are connected.
+        - [x] *   **Then** a dropdown shows all available devices.
+        - [x] *   **And** the operator can select which device to use.
+        - [x] *   *Note: Uses Spinner widget with Scan button to refresh device list*
+    - [x] *   **Scenario:** Operator manually enters device path
+        - [x] *   **Given** the settings panel is open.
+        - [x] *   **When** MESHTASTIC_SERIAL_PORT is set in .env.
+        - [x] *   **Then** the spinner defaults to that device path.
+        - [x] *   *Note: Device path loaded from environment via config_loader*
+    - [x] *   **Scenario:** Auto-detect option
+        - [x] *   **Given** the settings panel is open.
+        - [x] *   **When** the operator selects "Auto-detect".
+        - [x] *   **Then** the server will auto-detect the Meshtastic device on start.
+        - [x] *   *Note: "Auto-detect" is the first option in spinner, passes None to server*
+    - [x] *   **Scenario:** Device settings disabled when server is running
+        - [x] *   **Given** the server is running.
+        - [x] *   **Then** the device spinner and Scan button are disabled.
+        - [x] *   **When** the server stops (or fails to start).
+        - [x] *   **Then** device settings are re-enabled.
+    - [x] *   *Note: Added serial_port parameter to btcmesh_server.main()*
+    - [x] *   *Note: Single device found is auto-selected; uses meshtastic_utils.scan_meshtastic_devices()*
+
+- [x] **Story 18.3: Implement Reassembly Timeout Setting** *(Implemented)*
+- [x] *   **As a** relay operator,
+- [x] *   **I want** to configure the transaction reassembly timeout,
+- [x] *   **So that** I can adjust how long the server waits for missing chunks.
+    - [x] *   **Scenario:** Operator adjusts timeout
+        - [x] *   **Given** the settings panel is open.
+        - [x] *   **When** the operator enters a new timeout value (in seconds).
+        - [x] *   **Then** the setting is validated (positive integer).
+        - [x] *   **And** the new timeout is applied to the TransactionReassembler.
+        - [x] *   *Note: Uses create_input_row() with input_filter='int' for number-only input*
+    - [x] *   **Scenario:** Default timeout shown
+        - [x] *   **Given** no custom timeout is configured.
+        - [x] *   **When** the settings panel opens.
+        - [x] *   **Then** the default timeout (300 seconds) is displayed.
+        - [x] *   *Note: Loads from REASSEMBLY_TIMEOUT_SECONDS env var, defaults to 300*
+    - [x] *   **Scenario:** Timeout settings disabled when server is running
+        - [x] *   **Given** the server is running.
+        - [x] *   **Then** the timeout input is disabled.
+        - [x] *   **When** the server stops (or fails to start).
+        - [x] *   **Then** the timeout input is re-enabled.
+    - [x] *   *Note: Added reassembly_timeout parameter to btcmesh_server.main()*
+    - [x] *   *Note: Validation rejects empty, non-integer, zero, and negative values*
+
+- [x] **Story 18.4: Save and Load Settings** *(Implemented)*
+- [x] *   **As a** relay operator,
+- [x] *   **I want** settings to persist across sessions,
+- [x] *   **So that** I don't have to reconfigure the server every time.
+    - [x] *   **Scenario:** Settings saved to file
+        - [x] *   **Given** the operator changes settings.
+        - [x] *   **When** the operator clicks "Save".
+        - [x] *   **Then** settings are written to the .env file or a config file.
+        - [x] *   **And** a confirmation message is displayed.
+        - [x] *   *Note: Creates .env.bak backup before saving*
+        - [x] *   *Note: Preserves comments and unrelated variables in .env*
+        - [x] *   *Note: Displays warning that password is stored in plain text*
+    - [x] *   **Scenario:** Settings loaded on startup
+        - [x] *   **Given** settings were previously saved.
+        - [x] *   **When** the server GUI starts.
+        - [x] *   **Then** saved settings are loaded and displayed.
+        - [x] *   **And** the server can start with saved configuration.
+        - [x] *   *Note: Uses existing load_app_config() from config_loader.py*
+    - [x] *   **Scenario:** Auto-detect device handling
+        - [x] *   **Given** Auto-detect is selected for Meshtastic device.
+        - [x] *   **When** settings are saved.
+        - [x] *   **Then** MESHTASTIC_SERIAL_PORT is removed from .env file.
+    - [x] *   **Scenario:** Save button disabled during server run
+        - [x] *   **Given** the server is running.
+        - [x] *   **Then** the Save Settings button is disabled.
+        - [x] *   **When** the server stops or fails.
+        - [x] *   **Then** the Save Settings button is re-enabled.
+
+### 19. Server Statistics
+
+- [ ] **Story 19.1: Display Server Statistics**
+- [ ] *   **As a** relay operator,
+- [ ] *   **I want** to see statistics about server operation,
+- [ ] *   **So that** I can monitor relay performance and usage.
+    - [ ] *   **Scenario:** Display transaction counts
+        - [ ] *   **Given** the server is running.
+        - [ ] *   **Then** the GUI displays: transactions relayed (success), transactions failed, total chunks received.
+    - [ ] *   **Scenario:** Display uptime
+        - [ ] *   **Given** the server is running.
+        - [ ] *   **Then** the GUI displays server uptime (hours:minutes:seconds).
+    - [ ] *   **Scenario:** Statistics reset on server restart
+        - [ ] *   **Given** the server is stopped and restarted.
+        - [ ] *   **Then** statistics counters reset to zero.
+        - [ ] *   **And** uptime resets to 00:00:00.
+
+---
+
+## EPIC 3: Architecture Refactoring (Client Core)
+
+**Goal:** Separate protocol logic from UI/CLI concerns to enable clean Swift iOS implementation.
+
+**Priority:** Complete after Server GUI EPIC, before Swift iOS development begins.
+
+**Reference:** See [project/architecture.md](architecture.md) for detailed design.
+
+### 20. Core Protocol Extraction
+
+- [ ] **Story 20.1: Create core/protocol.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** protocol logic in a pure Python module,
+- [ ] *   **So that** it can be easily tested and referenced by Swift implementation.
+    - [ ] *   **Scenario:** Chunking logic extracted
+        - [ ] *   **Given** a raw transaction hex string.
+        - [ ] *   **When** `create_session(tx_hex)` is called.
+        - [ ] *   **Then** a `TransactionSession` dataclass is returned with session_id and chunks.
+    - [ ] *   **Scenario:** Message formatting extracted
+        - [ ] *   **Given** a session and chunk index.
+        - [ ] *   **When** `get_chunk_message(session, index)` is called.
+        - [ ] *   **Then** a formatted `BTC_TX|...` string is returned.
+    - [ ] *   **Scenario:** ACK parsing extracted
+        - [ ] *   **Given** a raw ACK message string.
+        - [ ] *   **When** `parse_ack(message)` is called.
+        - [ ] *   **Then** an `AckMessage` dataclass is returned.
+    - [ ] *   **Scenario:** No I/O in core
+        - [ ] *   **Given** any function in `core/protocol.py`.
+        - [ ] *   **Then** it has no print statements, no logging, no network calls.
+
+- [ ] **Story 20.2: Create core/message_types.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** message types as dataclasses,
+- [ ] *   **So that** the protocol is clearly defined and type-safe.
+    - [ ] *   **Scenario:** TransactionSession dataclass
+        - [ ] *   **Given** the `TransactionSession` class.
+        - [ ] *   **Then** it has fields: session_id (str), chunks (list[str]).
+        - [ ] *   **And** a computed property `total_chunks`.
+    - [ ] *   **Scenario:** ChunkMessage dataclass
+        - [ ] *   **Given** the `ChunkMessage` class.
+        - [ ] *   **Then** it has fields: session_id, chunk_number, total_chunks, payload.
+        - [ ] *   **And** a `format()` method returning the wire protocol string.
+    - [ ] *   **Scenario:** AckMessage and CompletionMessage dataclasses
+        - [ ] *   **Given** parsed server responses.
+        - [ ] *   **Then** they are represented as typed dataclasses.
+
+- [ ] **Story 20.3: Add unit tests for core/protocol.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** comprehensive tests for the protocol module,
+- [ ] *   **So that** refactoring doesn't break functionality.
+    - [ ] *   **Scenario:** Test chunking
+        - [ ] *   **Given** various transaction hex lengths.
+        - [ ] *   **Then** chunks are correctly sized and counted.
+    - [ ] *   **Scenario:** Test message parsing
+        - [ ] *   **Given** valid and invalid ACK/NACK messages.
+        - [ ] *   **Then** parsing succeeds or raises appropriate errors.
+    - [ ] *   **Scenario:** Test edge cases
+        - [ ] *   **Given** empty input, invalid hex, malformed messages.
+        - [ ] *   **Then** appropriate ValueError exceptions are raised.
+
+### 21. Transport Abstraction
+
+- [ ] **Story 21.1: Create transport/base.py interface**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** an abstract transport interface,
+- [ ] *   **So that** different Meshtastic connection methods can be swapped.
+    - [ ] *   **Scenario:** Abstract base class defined
+        - [ ] *   **Given** the `BaseTransport` class.
+        - [ ] *   **Then** it defines abstract methods: connect, disconnect, send, set_message_handler.
+        - [ ] *   **And** properties: is_connected, local_node_id.
+    - [ ] *   **Scenario:** Custom exceptions defined
+        - [ ] *   **Given** transport operations.
+        - [ ] *   **Then** `ConnectionError` and `SendError` exceptions are available.
+
+- [ ] **Story 21.2: Create transport/meshtastic_serial.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** a serial transport implementation,
+- [ ] *   **So that** the CLI and GUI use the abstracted interface.
+    - [ ] *   **Scenario:** Implements BaseTransport
+        - [ ] *   **Given** the `SerialTransport` class.
+        - [ ] *   **Then** it implements all methods from `BaseTransport`.
+    - [ ] *   **Scenario:** Wraps meshtastic library
+        - [ ] *   **Given** the existing Meshtastic serial connection code.
+        - [ ] *   **Then** it is encapsulated in this class.
+
+### 22. Client Sender Refactoring
+
+- [ ] **Story 22.1: Create client/sender.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** sending logic in a reusable class,
+- [ ] *   **So that** CLI and GUI share the same implementation.
+    - [ ] *   **Scenario:** TransactionSender class
+        - [ ] *   **Given** a transport and configuration.
+        - [ ] *   **When** `send(tx_hex, destination)` is called.
+        - [ ] *   **Then** the transaction is chunked and sent with ACK handling.
+    - [ ] *   **Scenario:** Progress callback
+        - [ ] *   **Given** an optional `on_progress` callback.
+        - [ ] *   **Then** it is called with (chunks_sent, total_chunks) during sending.
+    - [ ] *   **Scenario:** Result dataclass
+        - [ ] *   **Given** a completed send operation.
+        - [ ] *   **Then** a `SendResult` dataclass is returned with success, txid, error.
+
+- [ ] **Story 22.2: Refactor btcmesh_cli.py to use client/sender.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** the CLI to use the new sender module,
+- [ ] *   **So that** the CLI becomes a thin wrapper.
+    - [ ] *   **Scenario:** CLI uses TransactionSender
+        - [ ] *   **Given** the refactored CLI.
+        - [ ] *   **Then** it only handles argument parsing and output.
+        - [ ] *   **And** all business logic is delegated to `client/sender.py`.
+    - [ ] *   **Scenario:** Existing behavior preserved
+        - [ ] *   **Given** existing CLI tests.
+        - [ ] *   **Then** all tests continue to pass.
+
+- [ ] **Story 22.3: Refactor btcmesh_gui.py to use client/sender.py**
+- [ ] *   **As a** developer,
+- [ ] *   **I want** the GUI to use the new sender module,
+- [ ] *   **So that** the GUI becomes a thin wrapper.
+    - [ ] *   **Scenario:** GUI uses TransactionSender
+        - [ ] *   **Given** the refactored GUI.
+        - [ ] *   **Then** it only handles UI updates.
+        - [ ] *   **And** all business logic is delegated to `client/sender.py`.
+    - [ ] *   **Scenario:** Progress updates work
+        - [ ] *   **Given** the progress callback.
+        - [ ] *   **Then** the GUI status log shows chunk progress.
+
+### 23. Documentation and Handoff
+
+- [ ] **Story 23.1: Update architecture.md with final implementation**
+- [ ] *   **As a** Swift developer,
+- [ ] *   **I want** accurate documentation of the protocol,
+- [ ] *   **So that** I can implement the iOS version correctly.
+    - [ ] *   **Scenario:** Protocol spec finalized
+        - [ ] *   **Given** the completed refactoring.
+        - [ ] *   **Then** `architecture.md` reflects the actual implementation.
+        - [ ] *   **And** all message formats and constants are documented.
+
+- [ ] **Story 23.2: Create Swift implementation skeleton**
+- [ ] *   **As a** Swift developer,
+- [ ] *   **I want** a Swift project skeleton matching the architecture,
+- [ ] *   **So that** I can start implementing immediately.
+    - [ ] *   **Scenario:** Swift Core folder structure
+        - [ ] *   **Given** the recommended architecture.
+        - [ ] *   **Then** an `ios/BTCMesh/Core/` folder exists with placeholder files.
+    - [ ] *   **Scenario:** Protocol.swift skeleton
+        - [ ] *   **Given** `core/protocol.py` as reference.
+        - [ ] *   **Then** `Protocol.swift` has matching function signatures (empty bodies).
+
+---
+
+## EPIC 4: Session Recovery (Nice to Have / Future)
+
+**Goal:** Enable the server to persist and recover incomplete transaction sessions across restarts.
+
+**Priority:** Low - Nice to have for resilience. Consider after core functionality is stable.
+
+**Background:** Currently, if the server restarts mid-session (e.g., 10/15 chunks received), all progress is lost. This epic would enable resuming incomplete sessions.
+
+### 24. Session Persistence
+
+- [ ] **Story 24.1: Persist Active Session State**
+- [ ] *   **As a** relay operator,
+- [ ] *   **I want** active sessions to be saved to disk,
+- [ ] *   **So that** they can survive server restarts.
+    - [ ] *   **Scenario:** Session state saved on each chunk
+        - [ ] *   **Given** a chunk is received and validated.
+        - [ ] *   **Then** the session state is persisted to `active_sessions.json`.
+        - [ ] *   **And** includes: session_id, sender, chunks received (with payloads), timestamps.
+    - [ ] *   **Scenario:** Debounced writes for performance
+        - [ ] *   **Given** multiple chunks arrive rapidly.
+        - [ ] *   **Then** disk writes are batched/debounced to avoid I/O overhead.
+
+- [ ] **Story 24.2: Restore Sessions on Server Start**
+- [ ] *   **As a** relay operator,
+- [ ] *   **I want** valid sessions restored when the server starts,
+- [ ] *   **So that** in-progress transactions can continue.
+    - [ ] *   **Scenario:** Valid sessions restored
+        - [ ] *   **Given** the server starts with `active_sessions.json` present.
+        - [ ] *   **When** a session is within its timeout window.
+        - [ ] *   **Then** it is loaded into the reassembler.
+    - [ ] *   **Scenario:** Expired sessions discarded
+        - [ ] *   **Given** a persisted session older than the timeout.
+        - [ ] *   **Then** it is discarded and removed from the file.
+    - [ ] *   **Scenario:** Corrupted file handling
+        - [ ] *   **Given** `active_sessions.json` is corrupted.
+        - [ ] *   **Then** a warning is logged and the file is reset.
+
+- [ ] **Story 24.3: Client Query for Session State (Protocol Extension)**
+- [ ] *   **As a** client,
+- [ ] *   **I want** to query the server for session state,
+- [ ] *   **So that** I can resume sending from the correct chunk.
+    - [ ] *   **Scenario:** Session status query
+        - [ ] *   **Given** a new message type `BTC_SESSION_QUERY|<session_id>`.
+        - [ ] *   **When** the server receives this query.
+        - [ ] *   **Then** it responds with `BTC_SESSION_STATUS|<session_id>|<chunks_received>|<next_chunk_needed>`.
+    - [ ] *   **Scenario:** Unknown session response
+        - [ ] *   **Given** a query for an unknown session.
+        - [ ] *   **Then** the server responds with `BTC_SESSION_STATUS|<session_id>|UNKNOWN`.
 
 ---
 

@@ -136,7 +136,8 @@ class TransactionReassembler:
 
         Args:
             sender_id: The unique identifier of the message sender.
-                       Can be an int (node_num) or str (node_id string like !hex).
+                    Can be an int (node_num) or str (node_id string like !hex).
+                    Used as the session key for tracking.
             message_text: The raw text message content for the chunk.
 
         Returns:
@@ -321,3 +322,33 @@ class TransactionReassembler:
         ):
             return self.active_sessions[session_key][tx_session_id].get("sender_id_str")
         return None
+
+    def get_active_sessions_info(self) -> List[Dict[str, Any]]:
+        """
+        Returns information about all active reassembly sessions for GUI display.
+
+        Returns:
+            A list of dictionaries, each containing:
+            {
+                'session_id': str,
+                'sender': str,
+                'chunks_received': int,
+                'total_chunks': int,
+                'elapsed_seconds': float
+            }
+        """
+        current_time = time.time()
+        sessions_info = []
+
+        for session_key, sender_sessions in self.active_sessions.items():
+            for tx_session_id, session_data in sender_sessions.items():
+                elapsed = current_time - session_data.get("last_update_time", current_time)
+                sessions_info.append({
+                    'session_id': tx_session_id,
+                    'sender': session_data.get("sender_id_str", str(session_key)),
+                    'chunks_received': len(session_data.get("chunks", {})),
+                    'total_chunks': session_data.get("total_chunks", 0),
+                    'elapsed_seconds': elapsed,
+                })
+
+        return sessions_info
