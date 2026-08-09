@@ -22,6 +22,8 @@ from core.reassembler import (
     ReassemblyError,
     CHUNK_PREFIX,
     CHUNK_PARTS_DELIMITER,
+    MismatchedEncodingError,
+    match_chunk_prefix,
 )
 from core.rpc_client import BitcoinRPCClient
 from core.transaction_history import TransactionHistory
@@ -82,8 +84,9 @@ def _format_node_id(node_id_val: Any) -> Optional[str]:
 def _extract_session_id_from_raw_chunk(message_text: str) -> Optional[str]:
     """Rudimentary attempt to extract tx_session_id for NACKs if full parsing fails."""
     try:
-        if message_text.startswith(CHUNK_PREFIX):
-            parts = message_text[len(CHUNK_PREFIX) :].split(CHUNK_PARTS_DELIMITER)
+        matched = match_chunk_prefix(message_text)
+        if matched is not None:
+            parts = matched[0].split(CHUNK_PARTS_DELIMITER)
             if len(parts) > 0 and parts[0]:
                 return parts[0]
     except Exception:  # pylint: disable=broad-except
@@ -223,13 +226,12 @@ def on_receive_text_message(
                 f"Direct text from {sender_node_id_for_reply}: '{message_text}'"
             )
 
-            if message_text.startswith(CHUNK_PREFIX):
+            matched_chunk = match_chunk_prefix(message_text)
+            if matched_chunk is not None:
                 # Log every received chunk for diagnostics
                 try:
                     # Always parse session_id and chunk_info for NACK, even if add_chunk fails
-                    parts = message_text[len(CHUNK_PREFIX) :].split(
-                        CHUNK_PARTS_DELIMITER
-                    )
+                    parts = matched_chunk[0].split(CHUNK_PARTS_DELIMITER)
                     session_id = parts[0] if len(parts) > 0 else "UNKNOWN"
                     chunk_info = parts[1] if len(parts) > 1 else "UNKNOWN"
                 except Exception:
@@ -351,7 +353,11 @@ def on_receive_text_message(
                                     error=str(error),
                                     raw_tx=reassembled_hex
                                 )
-                except (InvalidChunkFormatError, MismatchedTotalChunksError) as e:
+                except (
+                    InvalidChunkFormatError,
+                    MismatchedTotalChunksError,
+                    MismatchedEncodingError,
+                ) as e:
                     tx_session_id_for_nack = (
                         session_id
                         or _extract_session_id_from_raw_chunk(message_text)

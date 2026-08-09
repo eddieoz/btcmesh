@@ -1,10 +1,30 @@
 # BTCMesh Protocol Specification
 
-Version 1.0 — February 2026
+Version 1.1 — August 2026
 
 ## Overview
 
 BTCMesh uses a stop-and-wait ARQ protocol to reliably transmit Bitcoin raw transactions over LoRa Meshtastic direct messages. Transactions are chunked into small pieces that fit within LoRa payload limits, sent one at a time with acknowledgment, and reassembled by the server for broadcast to the Bitcoin network.
+
+Chunks carry the transaction in one of two encodings, selected by the message prefix:
+
+| Encoding | Prefix | Chars per tx byte | Tx bytes per message | Since |
+|----------|--------|-------------------|----------------------|-------|
+| hex | `BTC_TX` | 2.00 | 85 | 1.0 |
+| base64 | `BTC_TX64` | 1.33 | 126 | 1.1 |
+
+Both fit the same 187-character message. Because a Meshtastic text message is a fixed-size box, base64 carries ~48% more transaction per packet, and since stop-and-wait spends a full round trip per chunk, fewer chunks means proportionally less time on air.
+
+| Transaction | hex chunks | base64 chunks |
+|-------------|-----------|---------------|
+| 191 B (1-in 1-out P2WPKH) | 3 | 2 |
+| 222 B (1-in 2-out P2WPKH) | 3 | 2 |
+| 372 B (2-in 2-out P2WPKH) | 5 | 3 |
+| 600 B (multi-input) | 8 | 5 |
+
+### Compatibility
+
+`BTC_TX64|` does not match `BTC_TX|` (the prefix includes the pipe), so a v1.0 relay ignores base64 chunks rather than misparsing them. Servers accept both encodings; clients default to hex so that relays can be upgraded before senders. A session must not mix encodings — see `BTC_NACK` below.
 
 ## Protocol Flow
 
@@ -12,11 +32,12 @@ BTCMesh uses a stop-and-wait ARQ protocol to reliably transmit Bitcoin raw trans
 
 ## Message Types
 
-### 1. BTC_TX (Client → Server)
+### 1. BTC_TX / BTC_TX64 (Client → Server)
 
-Transaction chunk containing a fragment of the raw transaction hex.
+Transaction chunk containing a fragment of the encoded raw transaction.
 
 **Format:** `BTC_TX|<session_id>|<chunk_number>/<total_chunks>|<hex_payload>`
+**Format:** `BTC_TX64|<session_id>|<chunk_number>/<total_chunks>|<base64_payload>`
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -24,8 +45,13 @@ Transaction chunk containing a fragment of the raw transaction hex.
 | `chunk_number` | integer | 1-indexed chunk number |
 | `total_chunks` | integer | Total number of chunks in session |
 | `hex_payload` | string | Fragment of raw transaction hex |
+| `base64_payload` | string | Fragment of the base64 encoding of the raw transaction |
 
-**Example:** `BTC_TX|a1b2c|1/3|02000000000108bf2c7d...`
+**Examples:**
+- `BTC_TX|a1b2c|1/3|02000000000108bf2c7d...`
+- `BTC_TX64|a1b2c|1/2|AgAAAAABCL8sfaXvry...`
+
+The base64 payload is produced by encoding the **whole** transaction once and then splitting the resulting string; it is not a per-chunk encoding. The server concatenates the fragments in order and decodes once. Chunk size is a multiple of 4, so every chunk except possibly the last is also independently decodable.
 
 ### 2. BTC_CHUNK_ACK (Server → Client)
 
@@ -75,13 +101,16 @@ Reports an error during reassembly, validation, or broadcast.
 
 **Example:** `BTC_NACK|a1b2c|ERROR|Insufficient fee`
 
+A session whose chunks arrive under more than one prefix (`BTC_TX` and `BTC_TX64`) is discarded and NACKed rather than reassembled: concatenating hex and base64 fragments would otherwise yield a silently corrupt transaction. Base64 that fails to decode after reassembly is reported the same way.
+
 Total NACK message length is capped at 200 characters to fit LoRa payload constraints.
 
 ## Constants
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| Chunk size | 170 hex chars (85 bytes) | Maximum hex payload per chunk |
+| Chunk size (hex) | 170 hex chars (85 bytes) | Maximum hex payload per chunk |
+| Chunk size (base64) | 168 base64 chars (126 bytes) | Maximum base64 payload per chunk; multiple of 4. Override with `BTCMESH_CHUNK_SIZE_B64` |
 | Session ID length | 5 hex chars | Random UUID-derived identifier |
 | ACK timeout | 30 seconds | Client waits this long for server ACK |
 | Retry timeout | 10 seconds | Client waits before retrying |
@@ -131,17 +160,29 @@ The server condenses RPC error messages for LoRa size constraints. Common mappin
 | fee is too high | Fee too high |
 | absurdly-high-fee | Absurd fee |
 
-For reassembly errors (InvalidChunkFormat, MismatchedTotalChunks), the error type and detail are included, truncated to fit the 200-character NACK limit.
+For reassembly errors (InvalidChunkFormat, MismatchedTotalChunks, MismatchedEncoding), the error type and detail are included, truncated to fit the 200-character NACK limit.
 
 ## Chunk Sizing
 
-Each Meshtastic text message has a payload limit. The chunk format includes overhead:
+Each Meshtastic text message has a payload limit of 233 bytes (`Constants.DATA_PAYLOAD_LEN`). The chunk format includes overhead:
 
 ```
 BTC_TX|<5 chars>|<digits>/<digits>|<payload>
+BTC_TX64|<5 chars>|<digits>/<digits>|<payload>
 ```
 
-With a 5-char session ID and typical chunk numbering (e.g. `12/15`), overhead is ~20 characters. The 170 hex-char payload keeps total message size well within Meshtastic payload limits.
+With a 5-char session ID, header overhead is 17 characters for `BTC_TX` and 19 for `BTC_TX64` at single-digit chunk counts, growing by 2 characters per extra digit in the counter.
+
+Both encodings are sized to the same 187-character message:
+
+| | payload chars | header | total | tx bytes carried |
+|---|---|---|---|---|
+| hex | 170 | 17 | 187 | 85 |
+| base64 | 168 | 19 | 187 | 126 |
+
+Transactions needing more than 9 chunks widen the counter; at 100+ chunks (≈12.6 KB of transaction) a base64 message reaches 191 characters, still 42 bytes below the radio limit.
+
+The base64 chunk size is deliberately conservative — it matches the message length v1.0 already ships in production rather than pushing to the 233-byte cap, since PKC-encrypted direct messages consume part of the payload for the authentication tag. Set `BTCMESH_CHUNK_SIZE_B64` (a positive multiple of 4) to calibrate for a specific radio, region, or channel configuration.
 
 ## Multiple Concurrent Sessions
 

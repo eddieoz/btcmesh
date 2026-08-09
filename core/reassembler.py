@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import time
 from typing import Dict, Optional, Tuple, List, Any
 
@@ -7,11 +8,37 @@ from core.logger_setup import server_logger  # Assuming a logger is available
 
 # Constants for chunk parsing
 CHUNK_PREFIX = "BTC_TX|"
+CHUNK_PREFIX_B64 = "BTC_TX64|"
 CHUNK_PARTS_DELIMITER = "|"
 CHUNK_INDEX_TOTAL_DELIMITER = "/"
 
+# Payload encodings. Hex is protocol v1.0; base64 (v1.1) carries ~48% more
+# transaction per message because it spends 1.33 chars per byte instead of 2.
+ENCODING_HEX = "hex"
+ENCODING_B64 = "base64"
+
 # Default timeout for reassembly sessions in seconds
 DEFAULT_REASSEMBLY_TIMEOUT_SECONDS = 5 * 60  # 5 minutes
+
+
+def match_chunk_prefix(message_text: str) -> Optional[Tuple[str, str]]:
+    """
+    Identify a transaction chunk message and its payload encoding.
+
+    Returns (remainder_after_prefix, encoding) or None if the message is not a
+    transaction chunk.
+
+    Note that "BTC_TX64|..." deliberately does not match CHUNK_PREFIX
+    ("BTC_TX|", with the pipe), so a v1.0 relay ignores base64 chunks outright
+    instead of misparsing them as hex.
+    """
+    for prefix, encoding in (
+        (CHUNK_PREFIX_B64, ENCODING_B64),
+        (CHUNK_PREFIX, ENCODING_HEX),
+    ):
+        if message_text.startswith(prefix):
+            return message_text[len(prefix) :], encoding
+    return None
 
 
 class ReassemblyError(Exception):
@@ -28,6 +55,12 @@ class MismatchedTotalChunksError(ReassemblyError):
 
 class DuplicateChunkError(ReassemblyError):
     """Raised when a duplicate chunk is received."""
+
+    pass
+
+
+class MismatchedEncodingError(ReassemblyError):
+    """Raised when the payload encoding changes mid-session."""
 
     pass
 
@@ -70,25 +103,32 @@ class TransactionReassembler:
             f"TransactionReassembler initialized with timeout: {timeout_seconds}s"
         )
 
-    def _parse_chunk(self, message_text: str) -> Tuple[str, int, int, str]:
+    def _parse_chunk(self, message_text: str) -> Tuple[str, int, int, str, str]:
         """
         Parses a raw message string to extract transaction chunk components.
 
-        Format: "BTC_TX|<tx_session_id>|<chunk_num>/<total_chunks>|<hex_payload_part>"
+        Formats:
+            "BTC_TX|<tx_session_id>|<chunk_num>/<total_chunks>|<hex_payload_part>"
+            "BTC_TX64|<tx_session_id>|<chunk_num>/<total_chunks>|<base64_payload_part>"
 
         Args:
             message_text: The raw text message received.
 
         Returns:
-            A tuple containing (tx_session_id, chunk_num, total_chunks, hex_payload_part).
+            A tuple containing
+            (tx_session_id, chunk_num, total_chunks, payload_part, encoding).
 
         Raises:
             InvalidChunkFormatError: If the message_text does not conform to the expected format.
         """
-        if not message_text.startswith(CHUNK_PREFIX):
-            raise InvalidChunkFormatError(f"Message does not start with {CHUNK_PREFIX}")
+        matched = match_chunk_prefix(message_text)
+        if matched is None:
+            raise InvalidChunkFormatError(
+                f"Message does not start with {CHUNK_PREFIX} or {CHUNK_PREFIX_B64}"
+            )
+        remainder, encoding = matched
 
-        parts = message_text[len(CHUNK_PREFIX) :].split(CHUNK_PARTS_DELIMITER)
+        parts = remainder.split(CHUNK_PARTS_DELIMITER)
         if len(parts) != 3:
             raise InvalidChunkFormatError(
                 f"Message does not have 3 parts after prefix: {parts}"
@@ -125,7 +165,7 @@ class TransactionReassembler:
                 f"Invalid chunk numbering: {chunk_num}/{total_chunks}"
             )
 
-        return tx_session_id, chunk_num, total_chunks, hex_payload_part
+        return tx_session_id, chunk_num, total_chunks, hex_payload_part, encoding
 
     def add_chunk(self, sender_id: Any, message_text: str) -> Optional[str]:
         """
@@ -159,7 +199,7 @@ class TransactionReassembler:
         session_key = sender_id
 
         try:
-            tx_session_id, chunk_num, total_chunks, hex_payload_part = (
+            tx_session_id, chunk_num, total_chunks, hex_payload_part, encoding = (
                 self._parse_chunk(message_text)
             )
         except InvalidChunkFormatError as e:
@@ -184,11 +224,23 @@ class TransactionReassembler:
             sender_sessions[tx_session_id] = {
                 "chunks": {},
                 "total_chunks": total_chunks,
+                "encoding": encoding,
                 "last_update_time": current_time,
                 "sender_id_str": str(sender_id),  # Store original sender_id for replies
             }
 
         session_data = sender_sessions[tx_session_id]
+
+        # Check for consistency in payload encoding. Concatenating hex and
+        # base64 fragments would silently produce a corrupt transaction.
+        if session_data.get("encoding", ENCODING_HEX) != encoding:
+            error_msg = (
+                f"{log_ctx} Mismatched encoding. Expected "
+                f"{session_data.get('encoding')}, got {encoding}. Discarding session."
+            )
+            server_logger.error(error_msg)
+            del sender_sessions[tx_session_id]
+            raise MismatchedEncodingError(error_msg)
 
         # Check for consistency in total_chunks
         if session_data["total_chunks"] != total_chunks:
@@ -236,6 +288,22 @@ class TransactionReassembler:
                     raise ReassemblyError(error_msg)  # Should be a specific error type
 
                 reassembled_hex += session_data["chunks"][i]
+
+            # base64 sessions carry the transaction more densely on air; decode
+            # here so callers always receive hex and never learn about encoding.
+            if session_data.get("encoding") == ENCODING_B64:
+                try:
+                    reassembled_hex = base64.b64decode(
+                        reassembled_hex, validate=True
+                    ).hex()
+                except ValueError as e:  # binascii.Error subclasses ValueError
+                    error_msg = (
+                        f"{log_ctx} Reassembly failed: payload is not valid "
+                        f"base64 ({e})."
+                    )
+                    server_logger.error(error_msg)
+                    del sender_sessions[tx_session_id]
+                    raise InvalidChunkFormatError(error_msg)
 
             server_logger.info(f"{log_ctx} Reassembly successful.")
             # Clean up completed session

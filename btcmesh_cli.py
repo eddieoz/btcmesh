@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
+import base64
 import uuid
 import os
 from core.config_loader import get_meshtastic_serial_port
 from core.logger_setup import setup_logger
+from core.reassembler import (
+    CHUNK_PREFIX,
+    CHUNK_PREFIX_B64,
+    ENCODING_B64,
+    ENCODING_HEX,
+)
 import time
 from pubsub import pub
 import queue
@@ -17,12 +24,28 @@ def is_valid_hex(s):
         return False
 
 
-CHUNK_SIZE = 170  # hex chars (100 bytes)
+CHUNK_SIZE = 170  # hex chars (85 tx bytes)
+
+# base64 spends 1.33 chars per transaction byte instead of hex's 2, so the same
+# 187-character message carries 126 tx bytes instead of 85. Kept a multiple of 4
+# so every chunk is whole base64 quanta. Override to calibrate for a radio or
+# region that leaves less room in the 233-byte Meshtastic payload.
+CHUNK_SIZE_B64 = int(os.environ.get("BTCMESH_CHUNK_SIZE_B64", "168"))
+assert (
+    CHUNK_SIZE_B64 > 0 and CHUNK_SIZE_B64 % 4 == 0
+), "BTCMESH_CHUNK_SIZE_B64 must be a positive multiple of 4"
 
 
 def chunk_transaction(tx_hex, chunk_size):
     """Split a hex string into chunks of specified size."""
     return [tx_hex[i : i + chunk_size] for i in range(0, len(tx_hex), chunk_size)]
+
+
+def encode_payload(tx_hex, encoding):
+    """Encode a raw transaction hex string for transport over the mesh."""
+    if encoding == ENCODING_B64:
+        return base64.b64encode(bytes.fromhex(tx_hex)).decode("ascii")
+    return tx_hex
 
 
 def generate_session_id():
@@ -207,6 +230,16 @@ def cli_main(
             action="store_true",
             help="Only parse and print arguments, do not send",
         )
+        parser.add_argument(
+            "--encoding",
+            choices=[ENCODING_HEX, ENCODING_B64],
+            default=ENCODING_HEX,
+            help=(
+                "Payload encoding. 'base64' (protocol v1.1) carries ~48%% more "
+                "transaction per message and needs fewer ACK round trips, but "
+                "the relay must understand BTC_TX64. Default: hex (v1.0)."
+            ),
+        )
         args = parser.parse_args()
     tx_hex = args.tx
     if len(tx_hex) % 2 != 0 or not re.fullmatch(r"[0-9a-fA-F]+", tx_hex):
@@ -216,15 +249,21 @@ def cli_main(
         )
         raise ValueError("Invalid raw transaction hex")
     logger = injected_logger if injected_logger is not None else cli_logger
+    # Callers that build their own args object (the GUI, tests) predate the
+    # flag, so default to the v1.0 encoding rather than requiring the attribute.
+    encoding = getattr(args, "encoding", None) or ENCODING_HEX
+    chunk_prefix = CHUNK_PREFIX_B64 if encoding == ENCODING_B64 else CHUNK_PREFIX
+    chunk_size = CHUNK_SIZE_B64 if encoding == ENCODING_B64 else CHUNK_SIZE
+    wire_payload = encode_payload(tx_hex, encoding)
     if args.dry_run:
         print(f"Arguments parsed successfully:")
         print(f"  Destination: {args.destination}")
         print(f"  Raw TX Hex: {args.tx}")
         session_id = getattr(args, "session_id", None) or generate_session_id()
-        chunks = chunk_transaction(tx_hex, CHUNK_SIZE)
+        chunks = chunk_transaction(wire_payload, chunk_size)
         total_chunks = len(chunks)
         for i, payload in enumerate(chunks, 1):
-            print(f"BTC_TX|{session_id}|{i}/{total_chunks}|{payload}")
+            print(f"{chunk_prefix}{session_id}|{i}/{total_chunks}|{payload}")
         return 0
     iface = (
         injected_iface
@@ -247,7 +286,7 @@ def cli_main(
     )  # Set global session ID
     _expected_sender_node_id = args.destination  # Set global expected sender
 
-    chunks = chunk_transaction(tx_hex, CHUNK_SIZE)
+    chunks = chunk_transaction(wire_payload, chunk_size)
     total_chunks = len(chunks)
 
     # Determine if we are using injected receiver or setting up our own
@@ -288,7 +327,7 @@ def cli_main(
                 current_retries = 0
 
                 while current_retries < MAX_RETRIES:
-                    msg_to_send = f"BTC_TX|{_current_session_id}|{chunk_num}/{total_chunks}|{payload}"
+                    msg_to_send = f"{chunk_prefix}{_current_session_id}|{chunk_num}/{total_chunks}|{payload}"
                     try:
                         iface.sendText(text=msg_to_send, destinationId=args.destination)
                         print(
@@ -607,6 +646,13 @@ def cli_main(
             logger.info(
                 f"SystemExit caught in cli_main for session {_current_session_id} with code {e.code}"
             )
+            if e.code and encoding == ENCODING_B64:
+                # A relay running protocol v1.0 ignores BTC_TX64 outright, so
+                # the symptom is silence rather than a NACK.
+                print(
+                    "No ACK from the relay. If it runs protocol v1.0 (hex only), "
+                    "retry with --encoding hex."
+                )
             return e.code
         except Exception as e:
             logger.error(
